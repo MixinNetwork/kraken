@@ -6,11 +6,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/MixinNetwork/kraken/engine"
+	"github.com/MixinNetwork/kraken/monitor"
 	"github.com/MixinNetwork/mixin/logger"
 )
 
 func main() {
-	cp := flag.String("config", "~/.kraken/config.toml", "the configuration file path")
+	cp := flag.String("c", "~/.kraken/engine.toml", "configuration file path")
+	sr := flag.String("s", "engine", "service engine or monitor")
 	flag.Parse()
 
 	if strings.HasPrefix(*cp, "~/") {
@@ -19,16 +22,11 @@ func main() {
 	}
 
 	logger.SetLevel(logger.INFO)
-	conf, err := Setup(*cp)
-	if err != nil {
-		panic(err)
-	}
 
-	engine, err := BuildEngine(conf)
-	if err != nil {
-		panic(err)
+	switch *sr {
+	case "engine":
+		engine.Boot(*cp)
+	case "monitor":
+		monitor.Boot(*cp)
 	}
-
-	go engine.Loop()
-	ServeRPC(engine, conf)
 }
