@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net"
 	"sync"
+
+	"github.com/MixinNetwork/mixin/logger"
 )
 
 type Engine struct {
@@ -25,6 +27,7 @@ func BuildEngine(conf *Configuration) (*Engine, error) {
 		rooms:     new(rmap),
 		peersChan: make(chan *Peer, conf.Engine.MaxPeerCount),
 	}
+	logger.Printf("BuildEngine(IP: %s, Interface: %s)\n", engine.IP, engine.Interface)
 	return engine, nil
 }
 
@@ -53,6 +56,8 @@ func getIPFromInterface(in string) (string, error) {
 		}
 		for _, addr := range addrs {
 			switch v := addr.(type) {
+			case *net.IPNet:
+				return v.IP.String(), nil
 			case *net.IPAddr:
 				return v.IP.String(), nil
 			}

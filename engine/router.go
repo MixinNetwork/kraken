@@ -1,11 +1,36 @@
 package engine
 
 import (
+	"fmt"
+
 	"github.com/pion/webrtc/v2"
 )
 
 type Router struct {
 	engine *Engine
+}
+
+func NewRouter(engine *Engine) *Router {
+	return &Router{engine: engine}
+}
+
+func (r *Router) rpcJoin(params []interface{}) (string, error) {
+	if len(params) != 3 {
+		return "", fmt.Errorf("invalid params count %d", len(params))
+	}
+	rid, ok := params[0].(string)
+	if !ok {
+		return "", fmt.Errorf("invalid rid type %s", params[0])
+	}
+	pid, ok := params[1].(string)
+	if !ok {
+		return "", fmt.Errorf("invalid pid type %s", params[1])
+	}
+	sdp, ok := params[2].(string)
+	if !ok {
+		return "", fmt.Errorf("invalid sdp type %s", params[2])
+	}
+	return r.join(rid, pid, sdp)
 }
 
 func (r *Router) join(rid, pid string, sdp string) (string, error) {

@@ -12,7 +12,7 @@ import (
 )
 
 type R struct {
-	engine *Engine
+	router *Router
 }
 
 type Call struct {
@@ -53,6 +53,14 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 	}
 	renderer := &Render{w: w, impl: render.New(), id: call.Id}
 	switch call.Method {
+	case "join":
+		sdp, err := impl.router.rpcJoin(call.Params)
+		if err != nil {
+			renderer.RenderError(err)
+		} else {
+			renderer.RenderData(map[string]string{"sdp": sdp})
+		}
+	case "leave":
 	default:
 		renderer.RenderError(fmt.Errorf("invalid method %s", call.Method))
 	}
@@ -71,7 +79,7 @@ func registerHanders(router *httptreemux.TreeMux) {
 }
 
 func ServeRPC(engine *Engine, conf *Configuration) error {
-	impl := &R{engine: engine}
+	impl := &R{router: NewRouter(engine)}
 	router := httptreemux.New()
 	router.POST("/", impl.handle)
 	registerHanders(router)
