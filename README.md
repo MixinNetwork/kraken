@@ -1,2 +1,5 @@
 # kraken
-🐙 private and efficient audio RTC network
+
+🐙 private and efficient audio RTC network.
+
+## Architecture
