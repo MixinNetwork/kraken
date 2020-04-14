@@ -1,8 +1,5 @@
 package monitor
 
-type Instance interface {
-}
-
 type Monitor struct {
 }
 

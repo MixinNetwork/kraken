@@ -8,6 +8,10 @@ import (
 )
 
 type Configuration struct {
+	Engine struct {
+		Interface    string `toml:"interface"`
+		MaxPeerCount int    `toml:"max-peer-count"`
+	} `toml:"engine"`
 	RPC struct {
 		Port int `toml:"port"`
 	} `toml:"rpc"`

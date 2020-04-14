@@ -7,5 +7,7 @@ require (
 	github.com/dimfeld/httptreemux v5.0.1+incompatible
 	github.com/gorilla/handlers v1.4.2
 	github.com/pelletier/go-toml v1.7.0
+	github.com/pion/rtcp v1.2.1
+	github.com/pion/webrtc/v2 v2.2.5
 	github.com/unrolled/render v1.0.2
 )
