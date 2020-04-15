@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/MixinNetwork/mixin/logger"
 	"github.com/pion/sdp/v2"
 	"github.com/pion/webrtc/v2"
 )
@@ -17,7 +18,14 @@ func NewRouter(engine *Engine) *Router {
 }
 
 func (r *Router) rpcList(params []interface{}) ([]string, error) {
-	return nil, nil
+	if len(params) != 1 {
+		return nil, fmt.Errorf("invalid params count %d", len(params))
+	}
+	rid, ok := params[0].(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid rid type %s", params[0])
+	}
+	return r.list(rid)
 }
 
 func (r *Router) rpcPublish(params []interface{}) (*webrtc.SessionDescription, error) {
@@ -58,23 +66,31 @@ func (r *Router) rpcTrickle(params []interface{}) error {
 	return r.trickle(rid, pid, candi)
 }
 
-func (r *Router) rpcSubscribe(params []interface{}) (string, error) {
+func (r *Router) rpcSubscribe(params []interface{}) (*webrtc.SessionDescription, error) {
 	if len(params) != 3 {
-		return "", fmt.Errorf("invalid params count %d", len(params))
+		return nil, fmt.Errorf("invalid params count %d", len(params))
 	}
 	rid, ok := params[0].(string)
 	if !ok {
-		return "", fmt.Errorf("invalid rid type %s", params[0])
+		return nil, fmt.Errorf("invalid rid type %s", params[0])
 	}
 	pid, ok := params[1].(string)
 	if !ok {
-		return "", fmt.Errorf("invalid pid type %s", params[1])
+		return nil, fmt.Errorf("invalid pid type %s", params[1])
 	}
-	sid, ok := params[2].(string)
+	sdp, ok := params[2].(string)
 	if !ok {
-		return "", fmt.Errorf("invalid sid type %s", params[2])
+		return nil, fmt.Errorf("invalid sdp type %s", params[2])
 	}
-	return r.subscribe(rid, pid, sid)
+	return r.subscribe(rid, pid, sdp)
+}
+
+func (r *Router) list(rid string) ([]string, error) {
+	var peers []string
+	r.engine.rooms.Iterate(rid, func(p *Peer) {
+		peers = append(peers, p.pid)
+	})
+	return peers, nil
 }
 
 func (r *Router) publish(rid, pid string, ss string) (*webrtc.SessionDescription, error) {
@@ -154,24 +170,55 @@ func (r *Router) trickle(rid, pid string, candi string) error {
 	return p.pc.AddICECandidate(ici)
 }
 
-func (r *Router) subscribe(rid, pid, sid string) (string, error) {
-	p := r.engine.rooms.Get(rid, pid)
-	if p == nil {
-		return "", fmt.Errorf("peer %s not found in %s", pid, rid)
+func (r *Router) subscribe(rid, pid string, ss string) (*webrtc.SessionDescription, error) {
+	var offer webrtc.SessionDescription
+	err := json.Unmarshal([]byte(ss), &offer)
+	if err != nil {
+		return nil, err
 	}
-	s := r.engine.rooms.Get(rid, sid)
-	if s == nil {
-		return "", fmt.Errorf("peer %s not found in %s", sid, rid)
+	if offer.Type != webrtc.SDPTypeOffer {
+		return nil, fmt.Errorf("invalid sdp type %s", offer.Type)
 	}
 
-	offer, err := p.pc.CreateOffer(nil)
+	parser := sdp.SessionDescription{}
+	err = parser.Unmarshal([]byte(offer.SDP))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	err = p.pc.SetLocalDescription(offer)
+
+	peer := r.engine.rooms.Get(rid, pid)
+	if peer == nil {
+		return nil, fmt.Errorf("peer %s not found in %s", pid, rid)
+	}
+
+	r.engine.rooms.Iterate(rid, func(p *Peer) {
+		if p.pid == peer.pid {
+			return
+		}
+		if peer.senders[p.pid] != nil {
+			return
+		}
+		if p.track == nil {
+			return
+		}
+		sender, err := peer.pc.AddTrack(p.track)
+		if err != nil {
+			logger.Printf("failed to add track %s for peer %s in room %s\n", p.pid, peer.pid, rid)
+			return
+		}
+		if id := sender.Track().ID(); id != p.pid {
+			panic(fmt.Errorf("malformed peer and track id %s %s", p.pid, id))
+		}
+		peer.senders[p.pid] = sender
+	})
+	err = peer.pc.SetRemoteDescription(offer)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	p.subscribers = append(p.subscribers, s)
-	return offer.SDP, nil
+	answer, err := peer.pc.CreateAnswer(nil)
+	if err != nil {
+		return nil, err
+	}
+	err = peer.pc.SetLocalDescription(answer)
+	return &answer, err
 }

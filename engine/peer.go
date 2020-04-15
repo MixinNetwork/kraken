@@ -8,11 +8,11 @@ import (
 )
 
 type Peer struct {
-	rid         string
-	pid         string
-	pc          *webrtc.PeerConnection
-	track       *webrtc.Track
-	subscribers []*Peer
+	rid     string
+	pid     string
+	pc      *webrtc.PeerConnection
+	track   *webrtc.Track
+	senders map[string]*webrtc.RTPSender
 }
 
 func (engine *Engine) AddPeer(rid, pid string, pc *webrtc.PeerConnection) {
@@ -41,23 +41,11 @@ func (engine *Engine) HandlePeer(peer *Peer) {
 		if err != nil {
 			panic(err) // FIXME
 		}
-
-		engine.rooms.Iterate(peer.rid, func(p *Peer) {
-			if p.pid == peer.pid {
-				peer.track = lt
-			}
-			p.pc.AddTrack(lt)
-		})
+		peer.track = lt
 
 		err = copyTrack(rt, lt)
 		if err != nil {
 			panic(err)
-		}
-
-	})
-	engine.rooms.Iterate(peer.rid, func(p *Peer) {
-		if p.track != nil && p.pid == peer.pid {
-			peer.pc.AddTrack(p.track)
 		}
 	})
 }

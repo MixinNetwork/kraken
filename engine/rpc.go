@@ -76,11 +76,11 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 			renderer.RenderData(map[string]string{})
 		}
 	case "subscribe":
-		offer, err := impl.router.rpcSubscribe(call.Params)
+		answer, err := impl.router.rpcSubscribe(call.Params)
 		if err != nil {
 			renderer.RenderError(err)
 		} else {
-			renderer.RenderData(map[string]string{"sdp": offer})
+			renderer.RenderData(answer)
 		}
 	case "leave":
 	default:
