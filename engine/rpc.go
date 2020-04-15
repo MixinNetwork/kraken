@@ -76,11 +76,18 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 			renderer.RenderData(map[string]string{})
 		}
 	case "subscribe":
-		answer, err := impl.router.rpcSubscribe(call.Params)
+		offer, err := impl.router.rpcSubscribe(call.Params)
 		if err != nil {
 			renderer.RenderError(err)
 		} else {
-			renderer.RenderData(answer)
+			renderer.RenderData(offer)
+		}
+	case "answer":
+		err := impl.router.rpcAnswer(call.Params)
+		if err != nil {
+			renderer.RenderError(err)
+		} else {
+			renderer.RenderData(map[string]string{})
 		}
 	default:
 		renderer.RenderError(fmt.Errorf("invalid method %s", call.Method))

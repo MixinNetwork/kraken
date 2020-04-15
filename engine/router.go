@@ -67,7 +67,7 @@ func (r *Router) rpcTrickle(params []interface{}) error {
 }
 
 func (r *Router) rpcSubscribe(params []interface{}) (*webrtc.SessionDescription, error) {
-	if len(params) != 3 {
+	if len(params) != 2 {
 		return nil, fmt.Errorf("invalid params count %d", len(params))
 	}
 	rid, ok := params[0].(string)
@@ -78,11 +78,26 @@ func (r *Router) rpcSubscribe(params []interface{}) (*webrtc.SessionDescription,
 	if !ok {
 		return nil, fmt.Errorf("invalid pid type %s", params[1])
 	}
+	return r.subscribe(rid, pid)
+}
+
+func (r *Router) rpcAnswer(params []interface{}) error {
+	if len(params) != 3 {
+		return fmt.Errorf("invalid params count %d", len(params))
+	}
+	rid, ok := params[0].(string)
+	if !ok {
+		return fmt.Errorf("invalid rid type %s", params[0])
+	}
+	pid, ok := params[1].(string)
+	if !ok {
+		return fmt.Errorf("invalid pid type %s", params[1])
+	}
 	sdp, ok := params[2].(string)
 	if !ok {
-		return nil, fmt.Errorf("invalid sdp type %s", params[2])
+		return fmt.Errorf("invalid sdp type %s", params[2])
 	}
-	return r.subscribe(rid, pid, sdp)
+	return r.answer(rid, pid, sdp)
 }
 
 func (r *Router) list(rid string) ([]string, error) {
@@ -170,22 +185,7 @@ func (r *Router) trickle(rid, pid string, candi string) error {
 	return p.pc.AddICECandidate(ici)
 }
 
-func (r *Router) subscribe(rid, pid string, ss string) (*webrtc.SessionDescription, error) {
-	var offer webrtc.SessionDescription
-	err := json.Unmarshal([]byte(ss), &offer)
-	if err != nil {
-		return nil, err
-	}
-	if offer.Type != webrtc.SDPTypeOffer {
-		return nil, fmt.Errorf("invalid sdp type %s", offer.Type)
-	}
-
-	parser := sdp.SessionDescription{}
-	err = parser.Unmarshal([]byte(offer.SDP))
-	if err != nil {
-		return nil, err
-	}
-
+func (r *Router) subscribe(rid, pid string) (*webrtc.SessionDescription, error) {
 	peer := r.engine.rooms.Get(rid, pid)
 	if peer == nil {
 		return nil, fmt.Errorf("peer %s not found in %s", pid, rid)
@@ -217,14 +217,34 @@ func (r *Router) subscribe(rid, pid string, ss string) (*webrtc.SessionDescripti
 		return &webrtc.SessionDescription{}, nil
 	}
 
-	err = peer.pc.SetRemoteDescription(offer)
+	offer, err := peer.pc.CreateOffer(nil)
 	if err != nil {
 		return nil, err
 	}
-	answer, err := peer.pc.CreateAnswer(nil)
+	err = peer.pc.SetLocalDescription(offer)
+	return &offer, err
+}
+
+func (r *Router) answer(rid, pid string, ss string) error {
+	var answer webrtc.SessionDescription
+	err := json.Unmarshal([]byte(ss), &answer)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	err = peer.pc.SetLocalDescription(answer)
-	return &answer, err
+	if answer.Type != webrtc.SDPTypeAnswer {
+		return fmt.Errorf("invalid sdp type %s", answer.Type)
+	}
+
+	parser := sdp.SessionDescription{}
+	err = parser.Unmarshal([]byte(answer.SDP))
+	if err != nil {
+		return err
+	}
+
+	peer := r.engine.rooms.Get(rid, pid)
+	if peer == nil {
+		return fmt.Errorf("peer %s not found in %s", pid, rid)
+	}
+
+	return peer.pc.SetRemoteDescription(answer)
 }
