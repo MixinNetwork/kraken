@@ -40,7 +40,7 @@ func (engine *Engine) HandlePeer(peer *Peer) {
 
 		lt, err := peer.pc.NewTrack(rt.PayloadType(), rt.SSRC(), peer.pid, peer.rid)
 		if err != nil {
-			panic(err) // FIXME
+			panic(err)
 		}
 		peer.track = lt
 

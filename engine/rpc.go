@@ -9,6 +9,7 @@ import (
 	"github.com/MixinNetwork/mixin/logger"
 	"github.com/dimfeld/httptreemux"
 	"github.com/gorilla/handlers"
+	"github.com/pion/webrtc/v2"
 	"github.com/unrolled/render"
 )
 
@@ -54,36 +55,29 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 	}
 	renderer := &Render{w: w, impl: render.New(), id: call.Id}
 	switch call.Method {
-	case "list":
-		peers, err := impl.router.rpcList(call.Params)
-		if err != nil {
-			renderer.RenderError(err)
-		} else {
-			renderer.RenderData(map[string][]string{"peers": peers})
-		}
 	case "publish":
-		answer, err := impl.router.rpcPublish(call.Params)
+		answer, err := impl.publish(call.Params)
 		if err != nil {
 			renderer.RenderError(err)
 		} else {
 			renderer.RenderData(answer)
 		}
 	case "trickle":
-		err := impl.router.rpcTrickle(call.Params)
+		err := impl.trickle(call.Params)
 		if err != nil {
 			renderer.RenderError(err)
 		} else {
 			renderer.RenderData(map[string]string{})
 		}
 	case "subscribe":
-		offer, err := impl.router.rpcSubscribe(call.Params)
+		offer, err := impl.subscribe(call.Params)
 		if err != nil {
 			renderer.RenderError(err)
 		} else {
 			renderer.RenderData(offer)
 		}
 	case "answer":
-		err := impl.router.rpcAnswer(call.Params)
+		err := impl.answer(call.Params)
 		if err != nil {
 			renderer.RenderError(err)
 		} else {
@@ -92,6 +86,78 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 	default:
 		renderer.RenderError(fmt.Errorf("invalid method %s", call.Method))
 	}
+}
+
+func (r *R) publish(params []interface{}) (*webrtc.SessionDescription, error) {
+	if len(params) != 3 {
+		return nil, fmt.Errorf("invalid params count %d", len(params))
+	}
+	rid, ok := params[0].(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid rid type %s", params[0])
+	}
+	pid, ok := params[1].(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid pid type %s", params[1])
+	}
+	sdp, ok := params[2].(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid sdp type %s", params[2])
+	}
+	return r.router.publish(rid, pid, sdp)
+}
+
+func (r *R) trickle(params []interface{}) error {
+	if len(params) != 3 {
+		return fmt.Errorf("invalid params count %d", len(params))
+	}
+	rid, ok := params[0].(string)
+	if !ok {
+		return fmt.Errorf("invalid rid type %s", params[0])
+	}
+	pid, ok := params[1].(string)
+	if !ok {
+		return fmt.Errorf("invalid pid type %s", params[1])
+	}
+	candi, ok := params[2].(string)
+	if !ok {
+		return fmt.Errorf("invalid candi type %s", params[2])
+	}
+	return r.router.trickle(rid, pid, candi)
+}
+
+func (r *R) subscribe(params []interface{}) (*webrtc.SessionDescription, error) {
+	if len(params) != 2 {
+		return nil, fmt.Errorf("invalid params count %d", len(params))
+	}
+	rid, ok := params[0].(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid rid type %s", params[0])
+	}
+	pid, ok := params[1].(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid pid type %s", params[1])
+	}
+	return r.router.subscribe(rid, pid)
+}
+
+func (r *R) answer(params []interface{}) error {
+	if len(params) != 3 {
+		return fmt.Errorf("invalid params count %d", len(params))
+	}
+	rid, ok := params[0].(string)
+	if !ok {
+		return fmt.Errorf("invalid rid type %s", params[0])
+	}
+	pid, ok := params[1].(string)
+	if !ok {
+		return fmt.Errorf("invalid pid type %s", params[1])
+	}
+	sdp, ok := params[2].(string)
+	if !ok {
+		return fmt.Errorf("invalid sdp type %s", params[2])
+	}
+	return r.router.answer(rid, pid, sdp)
 }
 
 func registerHandlers(router *httptreemux.TreeMux) {
