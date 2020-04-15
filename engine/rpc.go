@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/MixinNetwork/mixin/logger"
 	"github.com/dimfeld/httptreemux"
 	"github.com/gorilla/handlers"
 	"github.com/unrolled/render"
@@ -79,6 +80,7 @@ func registerHanders(router *httptreemux.TreeMux) {
 }
 
 func ServeRPC(engine *Engine, conf *Configuration) error {
+	logger.Printf("ServeRPC(:%d)\n", conf.RPC.Port)
 	impl := &R{router: NewRouter(engine)}
 	router := httptreemux.New()
 	router.POST("/", impl.handle)

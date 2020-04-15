@@ -24,7 +24,7 @@ func BuildEngine(conf *Configuration) (*Engine, error) {
 	engine := &Engine{
 		IP:        ip,
 		Interface: conf.Engine.Interface,
-		rooms:     new(rmap),
+		rooms:     rmapAllocate(),
 		peersChan: make(chan *Peer, conf.Engine.MaxPeerCount),
 	}
 	logger.Printf("BuildEngine(IP: %s, Interface: %s)\n", engine.IP, engine.Interface)
@@ -69,6 +69,12 @@ func getIPFromInterface(in string) (string, error) {
 type rmap struct {
 	sync.Mutex
 	m map[string][]*Peer
+}
+
+func rmapAllocate() *rmap {
+	rm := new(rmap)
+	rm.m = make(map[string][]*Peer)
+	return rm
 }
 
 func (rm *rmap) Add(rid string, p *Peer) {

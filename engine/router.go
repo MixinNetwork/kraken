@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 
+	"github.com/pion/sdp/v2"
 	"github.com/pion/webrtc/v2"
 )
 
@@ -33,19 +34,22 @@ func (r *Router) rpcJoin(params []interface{}) (string, error) {
 	return r.join(rid, pid, sdp)
 }
 
-func (r *Router) join(rid, pid string, sdp string) (string, error) {
-	se := webrtc.SettingEngine{}
-	se.SetLite(true)
-	se.SetTrickle(true)
-	se.SetNAT1To1IPs([]string{r.engine.IP, r.engine.IP}, webrtc.ICECandidateTypeHost)
-	se.SetInterfaceFilter(func(in string) bool { return in == r.engine.Interface })
-
-	me := webrtc.MediaEngine{}
-	offer := webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: sdp}
-	err := me.PopulateFromSDP(offer)
+func (r *Router) join(rid, pid string, jsep string) (string, error) {
+	sdp := sdp.SessionDescription{}
+	err := sdp.Unmarshal([]byte(jsep))
 	if err != nil {
 		return "", err
 	}
+
+	se := webrtc.SettingEngine{}
+	se.SetLite(true)
+	se.SetTrickle(false)
+	se.SetInterfaceFilter(func(in string) bool { return in == r.engine.Interface })
+	se.SetNAT1To1IPs([]string{r.engine.IP}, webrtc.ICECandidateTypeHost)
+
+	codec := webrtc.NewRTPOpusCodec(webrtc.DefaultPayloadTypeOpus, 48000)
+	me := webrtc.MediaEngine{}
+	me.RegisterCodec(codec)
 
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(me), webrtc.WithSettingEngine(se))
 
@@ -58,6 +62,7 @@ func (r *Router) join(rid, pid string, sdp string) (string, error) {
 		return "", err
 	}
 
+	offer := webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: jsep}
 	err = pc.SetRemoteDescription(offer)
 	if err != nil {
 		pc.Close()
