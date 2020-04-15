@@ -82,7 +82,6 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 		} else {
 			renderer.RenderData(answer)
 		}
-	case "leave":
 	default:
 		renderer.RenderError(fmt.Errorf("invalid method %s", call.Method))
 	}

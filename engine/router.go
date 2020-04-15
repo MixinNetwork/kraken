@@ -191,6 +191,7 @@ func (r *Router) subscribe(rid, pid string, ss string) (*webrtc.SessionDescripti
 		return nil, fmt.Errorf("peer %s not found in %s", pid, rid)
 	}
 
+	var renegotiate bool
 	r.engine.rooms.Iterate(rid, func(p *Peer) {
 		if p.pid == peer.pid {
 			return
@@ -210,7 +211,12 @@ func (r *Router) subscribe(rid, pid string, ss string) (*webrtc.SessionDescripti
 			panic(fmt.Errorf("malformed peer and track id %s %s", p.pid, id))
 		}
 		peer.senders[p.pid] = sender
+		renegotiate = true
 	})
+	if !renegotiate {
+		return &webrtc.SessionDescription{}, nil
+	}
+
 	err = peer.pc.SetRemoteDescription(offer)
 	if err != nil {
 		return nil, err

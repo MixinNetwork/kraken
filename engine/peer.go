@@ -17,6 +17,7 @@ type Peer struct {
 
 func (engine *Engine) AddPeer(rid, pid string, pc *webrtc.PeerConnection) {
 	peer := &Peer{rid: rid, pid: pid, pc: pc}
+	peer.senders = make(map[string]*webrtc.RTPSender)
 	engine.rooms.Add(peer.rid, peer)
 	go engine.HandlePeer(peer)
 }
