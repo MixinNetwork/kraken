@@ -54,12 +54,33 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 	}
 	renderer := &Render{w: w, impl: render.New(), id: call.Id}
 	switch call.Method {
-	case "join":
-		sdp, err := impl.router.rpcJoin(call.Params)
+	case "list":
+		peers, err := impl.router.rpcList(call.Params)
 		if err != nil {
 			renderer.RenderError(err)
 		} else {
-			renderer.RenderData(map[string]string{"sdp": sdp})
+			renderer.RenderData(map[string][]string{"peers": peers})
+		}
+	case "publish":
+		answer, err := impl.router.rpcPublish(call.Params)
+		if err != nil {
+			renderer.RenderError(err)
+		} else {
+			renderer.RenderData(answer)
+		}
+	case "trickle":
+		err := impl.router.rpcTrickle(call.Params)
+		if err != nil {
+			renderer.RenderError(err)
+		} else {
+			renderer.RenderData(map[string]string{})
+		}
+	case "subscribe":
+		offer, err := impl.router.rpcSubscribe(call.Params)
+		if err != nil {
+			renderer.RenderError(err)
+		} else {
+			renderer.RenderData(map[string]string{"sdp": offer})
 		}
 	case "leave":
 	default:
@@ -67,7 +88,7 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 	}
 }
 
-func registerHanders(router *httptreemux.TreeMux) {
+func registerHandlers(router *httptreemux.TreeMux) {
 	router.MethodNotAllowedHandler = func(w http.ResponseWriter, r *http.Request, _ map[string]httptreemux.HandlerFunc) {
 		render.New().JSON(w, http.StatusNotFound, map[string]interface{}{"error": "not found"})
 	}
@@ -79,13 +100,33 @@ func registerHanders(router *httptreemux.TreeMux) {
 	}
 }
 
+func handleCORS(handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			handler.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Add("Access-Control-Allow-Headers", "Content-Type,Authorization,Mixin-Conversation-ID")
+		w.Header().Set("Access-Control-Allow-Methods", "OPTIONS,GET,POST,DELETE")
+		w.Header().Set("Access-Control-Max-Age", "600")
+		if r.Method == "OPTIONS" {
+			render.New().JSON(w, http.StatusOK, map[string]interface{}{})
+		} else {
+			handler.ServeHTTP(w, r)
+		}
+	})
+}
+
 func ServeRPC(engine *Engine, conf *Configuration) error {
 	logger.Printf("ServeRPC(:%d)\n", conf.RPC.Port)
 	impl := &R{router: NewRouter(engine)}
 	router := httptreemux.New()
 	router.POST("/", impl.handle)
-	registerHanders(router)
-	handler := handlers.ProxyHeaders(router)
+	registerHandlers(router)
+	handler := handleCORS(router)
+	handler = handlers.ProxyHeaders(handler)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", conf.RPC.Port),

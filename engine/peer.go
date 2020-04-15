@@ -8,23 +8,35 @@ import (
 )
 
 type Peer struct {
-	rid   string
-	pid   string
-	pc    *webrtc.PeerConnection
-	track *webrtc.Track
+	rid         string
+	pid         string
+	pc          *webrtc.PeerConnection
+	track       *webrtc.Track
+	subscribers []*Peer
 }
 
 func (engine *Engine) AddPeer(rid, pid string, pc *webrtc.PeerConnection) {
 	peer := &Peer{rid: rid, pid: pid, pc: pc}
-	engine.peersChan <- peer
+	engine.rooms.Add(peer.rid, peer)
+	go engine.HandlePeer(peer)
 }
 
 func (engine *Engine) HandlePeer(peer *Peer) {
+	peer.pc.OnSignalingStateChange(func(state webrtc.SignalingState) {
+		logger.Printf("HandlePeer(%s) OnSignalingStateChange(%s)\n", peer.pid, state)
+	})
+	peer.pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		logger.Printf("HandlePeer(%s) OnConnectionStateChange(%s)\n", peer.pid, state)
+	})
+	peer.pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+		logger.Printf("HandlePeer(%s) OnICEConnectionStateChange(%s)\n", peer.pid, state)
+	})
 	peer.pc.OnTrack(func(rt *webrtc.Track, receiver *webrtc.RTPReceiver) {
+		logger.Printf("HandlePeer(%s) OnTrack(%d, %d)\n", peer.pid, rt.PayloadType(), rt.SSRC())
 		if webrtc.DefaultPayloadTypeOpus != rt.PayloadType() {
-			logger.Printf("invalid payload %d received from peer %s in room %s\n", rt.PayloadType(), peer.pid, peer.rid)
 			return
 		}
+
 		lt, err := peer.pc.NewTrack(rt.PayloadType(), rt.SSRC(), peer.pid, peer.rid)
 		if err != nil {
 			panic(err) // FIXME
@@ -37,22 +49,30 @@ func (engine *Engine) HandlePeer(peer *Peer) {
 			p.pc.AddTrack(lt)
 		})
 
-		rtpBuf := make([]byte, 1400)
-		for {
-			i, err := rt.Read(rtpBuf)
-			if err != nil {
-				panic(err)
-			}
-			// ErrClosedPipe means we don't have any subscribers, this is ok if no peers have connected yet
-			_, err = lt.Write(rtpBuf[:i])
-			if err != nil && err != io.ErrClosedPipe {
-				panic(err)
-			}
+		err = copyTrack(rt, lt)
+		if err != nil {
+			panic(err)
 		}
+
 	})
 	engine.rooms.Iterate(peer.rid, func(p *Peer) {
 		if p.track != nil && p.pid == peer.pid {
 			peer.pc.AddTrack(p.track)
 		}
 	})
+}
+
+func copyTrack(src, dst *webrtc.Track) error {
+	buf := make([]byte, 1400)
+	for {
+		i, err := src.Read(buf)
+		if err != nil {
+			return err
+		}
+		// ErrClosedPipe means we don't have any subscribers, this is ok if no peers have connected yet
+		_, err = dst.Write(buf[:i])
+		if err != nil && err != io.ErrClosedPipe {
+			return err
+		}
+	}
 }

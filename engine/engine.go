@@ -12,8 +12,7 @@ type Engine struct {
 	IP        string
 	Interface string
 
-	rooms     *rmap
-	peersChan chan *Peer
+	rooms *rmap
 }
 
 func BuildEngine(conf *Configuration) (*Engine, error) {
@@ -25,20 +24,12 @@ func BuildEngine(conf *Configuration) (*Engine, error) {
 		IP:        ip,
 		Interface: conf.Engine.Interface,
 		rooms:     rmapAllocate(),
-		peersChan: make(chan *Peer, conf.Engine.MaxPeerCount),
 	}
 	logger.Printf("BuildEngine(IP: %s, Interface: %s)\n", engine.IP, engine.Interface)
 	return engine, nil
 }
 
 func (engine *Engine) Loop() {
-	for {
-		select {
-		case peer := <-engine.peersChan:
-			engine.rooms.Add(peer.rid, peer)
-			go engine.HandlePeer(peer)
-		}
-	}
 }
 
 func getIPFromInterface(in string) (string, error) {
@@ -82,6 +73,18 @@ func (rm *rmap) Add(rid string, p *Peer) {
 	defer rm.Unlock()
 
 	rm.m[rid] = append(rm.m[rid], p)
+}
+
+func (rm *rmap) Get(rid, pid string) *Peer {
+	rm.Lock()
+	defer rm.Unlock()
+
+	for _, p := range rm.m[rid] {
+		if p.pid == pid {
+			return p
+		}
+	}
+	return nil
 }
 
 func (rm *rmap) Iterate(rid string, hook func(*Peer)) {
