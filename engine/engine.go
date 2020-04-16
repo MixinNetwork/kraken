@@ -59,12 +59,12 @@ func getIPFromInterface(in string) (string, error) {
 
 type rmap struct {
 	sync.Mutex
-	m map[string][]*Peer
+	m map[string]map[string]*Peer
 }
 
 func rmapAllocate() *rmap {
 	rm := new(rmap)
-	rm.m = make(map[string][]*Peer)
+	rm.m = make(map[string]map[string]*Peer)
 	return rm
 }
 
@@ -72,19 +72,20 @@ func (rm *rmap) Add(rid string, p *Peer) {
 	rm.Lock()
 	defer rm.Unlock()
 
-	rm.m[rid] = append(rm.m[rid], p)
+	if rm.m[rid] == nil {
+		rm.m[rid] = make(map[string]*Peer)
+	}
+	rm.m[rid][p.uid] = p
 }
 
-func (rm *rmap) Get(rid, pid string) *Peer {
+func (rm *rmap) Get(rid, uid string) *Peer {
 	rm.Lock()
 	defer rm.Unlock()
 
-	for _, p := range rm.m[rid] {
-		if p.pid == pid {
-			return p
-		}
+	if rm.m[rid] == nil {
+		return nil
 	}
-	return nil
+	return rm.m[rid][uid]
 }
 
 func (rm *rmap) Iterate(rid string, hook func(*Peer)) {

@@ -17,7 +17,7 @@ func NewRouter(engine *Engine) *Router {
 	return &Router{engine: engine}
 }
 
-func (r *Router) publish(rid, pid string, ss string) (*webrtc.SessionDescription, error) {
+func (r *Router) publish(rid, uid string, ss string) (*webrtc.SessionDescription, error) {
 	var offer webrtc.SessionDescription
 	err := json.Unmarshal([]byte(ss), &offer)
 	if err != nil {
@@ -77,35 +77,41 @@ func (r *Router) publish(rid, pid string, ss string) (*webrtc.SessionDescription
 		pc.Close()
 		return nil, err
 	}
-	r.engine.AddPeer(rid, pid, pc)
+	r.engine.AddPeer(rid, uid, pc)
 	return &answer, nil
 }
 
-func (r *Router) trickle(rid, pid string, candi string) error {
+func (r *Router) trickle(rid, uid string, candi string) error {
 	var ici webrtc.ICECandidateInit
 	err := json.Unmarshal([]byte(candi), &ici)
 	if err != nil || ici.Candidate == "" {
 		return err
 	}
-	p := r.engine.rooms.Get(rid, pid)
+	p := r.engine.rooms.Get(rid, uid)
 	if p == nil {
-		return fmt.Errorf("peer %s not found in %s", pid, rid)
+		return fmt.Errorf("peer %s not found in %s", uid, rid)
 	}
+	p.Lock()
+	defer p.Unlock()
+
 	return p.pc.AddICECandidate(ici)
 }
 
-func (r *Router) subscribe(rid, pid string) (*webrtc.SessionDescription, error) {
-	peer := r.engine.rooms.Get(rid, pid)
+func (r *Router) subscribe(rid, uid string) (*webrtc.SessionDescription, error) {
+	peer := r.engine.rooms.Get(rid, uid)
 	if peer == nil {
-		return nil, fmt.Errorf("peer %s not found in %s", pid, rid)
+		return nil, fmt.Errorf("peer %s not found in %s", uid, rid)
 	}
 
 	var renegotiate bool
 	r.engine.rooms.Iterate(rid, func(p *Peer) {
-		if p.pid == peer.pid {
+		peer.Lock()
+		defer peer.Unlock()
+
+		if p.uid == peer.uid {
 			return
 		}
-		if peer.senders[p.pid] != nil {
+		if peer.senders[p.cid] != nil {
 			return
 		}
 		if p.track == nil {
@@ -113,13 +119,13 @@ func (r *Router) subscribe(rid, pid string) (*webrtc.SessionDescription, error) 
 		}
 		sender, err := peer.pc.AddTrack(p.track)
 		if err != nil {
-			logger.Printf("failed to add track %s for peer %s in room %s\n", p.pid, peer.pid, rid)
+			logger.Printf("failed to add sender %s to peer %s\n", p.id(), peer.id())
 			return
 		}
-		if id := sender.Track().ID(); id != p.pid {
-			panic(fmt.Errorf("malformed peer and track id %s %s", p.pid, id))
+		if id := sender.Track().ID(); id != p.cid {
+			panic(fmt.Errorf("malformed peer and track id %s %s", p.cid, id))
 		}
-		peer.senders[p.pid] = sender
+		peer.senders[p.cid] = sender
 		renegotiate = true
 	})
 	if !renegotiate {
@@ -134,7 +140,7 @@ func (r *Router) subscribe(rid, pid string) (*webrtc.SessionDescription, error) 
 	return &offer, err
 }
 
-func (r *Router) answer(rid, pid string, ss string) error {
+func (r *Router) answer(rid, uid string, ss string) error {
 	var answer webrtc.SessionDescription
 	err := json.Unmarshal([]byte(ss), &answer)
 	if err != nil {
@@ -150,10 +156,12 @@ func (r *Router) answer(rid, pid string, ss string) error {
 		return err
 	}
 
-	peer := r.engine.rooms.Get(rid, pid)
+	peer := r.engine.rooms.Get(rid, uid)
 	if peer == nil {
-		return fmt.Errorf("peer %s not found in %s", pid, rid)
+		return fmt.Errorf("peer %s not found in %s", uid, rid)
 	}
 
+	peer.Lock()
+	defer peer.Unlock()
 	return peer.pc.SetRemoteDescription(answer)
 }

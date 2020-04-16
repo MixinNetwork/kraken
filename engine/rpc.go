@@ -96,15 +96,15 @@ func (r *R) publish(params []interface{}) (*webrtc.SessionDescription, error) {
 	if !ok {
 		return nil, fmt.Errorf("invalid rid type %s", params[0])
 	}
-	pid, ok := params[1].(string)
+	uid, ok := params[1].(string)
 	if !ok {
-		return nil, fmt.Errorf("invalid pid type %s", params[1])
+		return nil, fmt.Errorf("invalid uid type %s", params[1])
 	}
 	sdp, ok := params[2].(string)
 	if !ok {
 		return nil, fmt.Errorf("invalid sdp type %s", params[2])
 	}
-	return r.router.publish(rid, pid, sdp)
+	return r.router.publish(rid, uid, sdp)
 }
 
 func (r *R) trickle(params []interface{}) error {
@@ -115,15 +115,15 @@ func (r *R) trickle(params []interface{}) error {
 	if !ok {
 		return fmt.Errorf("invalid rid type %s", params[0])
 	}
-	pid, ok := params[1].(string)
+	uid, ok := params[1].(string)
 	if !ok {
-		return fmt.Errorf("invalid pid type %s", params[1])
+		return fmt.Errorf("invalid uid type %s", params[1])
 	}
 	candi, ok := params[2].(string)
 	if !ok {
 		return fmt.Errorf("invalid candi type %s", params[2])
 	}
-	return r.router.trickle(rid, pid, candi)
+	return r.router.trickle(rid, uid, candi)
 }
 
 func (r *R) subscribe(params []interface{}) (*webrtc.SessionDescription, error) {
@@ -134,11 +134,11 @@ func (r *R) subscribe(params []interface{}) (*webrtc.SessionDescription, error) 
 	if !ok {
 		return nil, fmt.Errorf("invalid rid type %s", params[0])
 	}
-	pid, ok := params[1].(string)
+	uid, ok := params[1].(string)
 	if !ok {
-		return nil, fmt.Errorf("invalid pid type %s", params[1])
+		return nil, fmt.Errorf("invalid uid type %s", params[1])
 	}
-	return r.router.subscribe(rid, pid)
+	return r.router.subscribe(rid, uid)
 }
 
 func (r *R) answer(params []interface{}) error {
@@ -149,15 +149,15 @@ func (r *R) answer(params []interface{}) error {
 	if !ok {
 		return fmt.Errorf("invalid rid type %s", params[0])
 	}
-	pid, ok := params[1].(string)
+	uid, ok := params[1].(string)
 	if !ok {
-		return fmt.Errorf("invalid pid type %s", params[1])
+		return fmt.Errorf("invalid uid type %s", params[1])
 	}
 	sdp, ok := params[2].(string)
 	if !ok {
 		return fmt.Errorf("invalid sdp type %s", params[2])
 	}
-	return r.router.answer(rid, pid, sdp)
+	return r.router.answer(rid, uid, sdp)
 }
 
 func registerHandlers(router *httptreemux.TreeMux) {
