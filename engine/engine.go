@@ -68,14 +68,16 @@ func rmapAllocate() *rmap {
 	return rm
 }
 
-func (rm *rmap) Add(rid string, p *Peer) {
+func (rm *rmap) Add(rid string, p *Peer) *Peer {
 	rm.Lock()
 	defer rm.Unlock()
 
 	if rm.m[rid] == nil {
 		rm.m[rid] = make(map[string]*Peer)
 	}
+	old := rm.m[rid][p.uid]
 	rm.m[rid][p.uid] = p
+	return old
 }
 
 func (rm *rmap) Get(rid, uid string) *Peer {

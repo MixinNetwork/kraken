@@ -27,12 +27,22 @@ func (engine *Engine) AddPeer(rid, uid string, pc *webrtc.PeerConnection) {
 	}
 	peer := &Peer{rid: rid, uid: uid, cid: cid.String(), pc: pc}
 	peer.senders = make(map[string]*webrtc.RTPSender)
-	engine.rooms.Add(peer.rid, peer)
-	go engine.HandlePeer(peer)
+	old := engine.rooms.Add(peer.rid, peer)
+	if old != nil {
+		old.Close()
+	}
+	engine.HandlePeer(peer)
 }
 
 func (p *Peer) id() string {
 	return fmt.Sprintf("%s:%s:%s", p.rid, p.uid, p.cid)
+}
+
+func (p *Peer) Close() error {
+	logger.Printf("PeerClose(%s) now\n", p.id())
+	err := p.pc.Close()
+	logger.Printf("PeerClose(%s) with %v\n", p.id(), err)
+	return err
 }
 
 func (engine *Engine) HandlePeer(peer *Peer) {
@@ -61,6 +71,7 @@ func (engine *Engine) HandlePeer(peer *Peer) {
 		if err != nil {
 			panic(err)
 		}
+		logger.Printf("HandlePeer(%s) OnTrack(%d, %d) end\n", peer.id(), rt.PayloadType(), rt.SSRC())
 	})
 }
 
@@ -68,13 +79,12 @@ func copyTrack(src, dst *webrtc.Track) error {
 	buf := make([]byte, 1400)
 	for {
 		i, err := src.Read(buf)
+		if err == io.EOF {
+			return nil
+		}
 		if err != nil {
 			return err
 		}
-		// ErrClosedPipe means we don't have any subscribers, this is ok if no peers have connected yet
-		_, err = dst.Write(buf[:i])
-		if err != nil && err != io.ErrClosedPipe {
-			return err
-		}
+		dst.Write(buf[:i])
 	}
 }
