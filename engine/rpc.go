@@ -53,7 +53,9 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 		render.New().JSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
 		return
 	}
+	startAt := time.Now()
 	renderer := &Render{w: w, impl: render.New(), id: call.Id}
+	logger.Printf("RPC.handle(id: %s, method: %s, params: %v)\n", call.Id, call.Method, call.Params)
 	switch call.Method {
 	case "publish":
 		answer, err := impl.publish(call.Params)
@@ -86,6 +88,7 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 	default:
 		renderer.RenderError(fmt.Errorf("invalid method %s", call.Method))
 	}
+	logger.Printf("RPC.handle(id: %s, time: %fs)\n", call.Id, time.Now().Sub(startAt).Seconds())
 }
 
 func (r *R) publish(params []interface{}) (*webrtc.SessionDescription, error) {
