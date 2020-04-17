@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/MixinNetwork/mixin/logger"
 	"github.com/gofrs/uuid"
@@ -18,6 +19,7 @@ type Peer struct {
 	pc      *webrtc.PeerConnection
 	track   *webrtc.Track
 	senders map[string]*webrtc.RTPSender
+	buffer  chan []byte
 }
 
 func (engine *Engine) BuildPeer(rid, uid string, pc *webrtc.PeerConnection) *Peer {
@@ -26,6 +28,7 @@ func (engine *Engine) BuildPeer(rid, uid string, pc *webrtc.PeerConnection) *Pee
 		panic(err)
 	}
 	peer := &Peer{rid: rid, uid: uid, cid: cid.String(), pc: pc}
+	peer.buffer = make(chan []byte, 1024)
 	peer.senders = make(map[string]*webrtc.RTPSender)
 	peer.handle()
 	return peer
@@ -64,24 +67,39 @@ func (peer *Peer) handle() {
 		}
 		peer.track = lt
 
-		err = copyTrack(rt, lt)
-		if err != nil {
-			panic(err)
-		}
-		logger.Printf("HandlePeer(%s) OnTrack(%d, %d) end\n", peer.id(), rt.PayloadType(), rt.SSRC())
+		err = peer.copyTrack(rt, lt)
+		logger.Printf("HandlePeer(%s) OnTrack(%d, %d) end with %s\n", peer.id(), rt.PayloadType(), rt.SSRC(), err.Error())
+		peer.pc.Close()
+		peer.track = nil
 	})
 }
 
-func copyTrack(src, dst *webrtc.Track) error {
-	buf := make([]byte, 1400)
+func (peer *Peer) copyTrack(src, dst *webrtc.Track) error {
+	go func() error {
+		for {
+			buf := make([]byte, 256)
+			i, err := src.Read(buf)
+			if err == io.EOF {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if i >= len(buf) {
+				return fmt.Errorf("track packet size too large %d", i)
+			}
+			peer.buffer <- buf[:i]
+		}
+	}()
+
 	for {
-		i, err := src.Read(buf)
-		if err == io.EOF {
-			return nil
+		timer := time.NewTimer(3 * time.Second)
+		select {
+		case buf := <-peer.buffer:
+			dst.Write(buf)
+		case <-timer.C:
+			return fmt.Errorf("peer track read timeout")
 		}
-		if err != nil {
-			return err
-		}
-		dst.Write(buf[:i])
+		timer.Stop()
 	}
 }
