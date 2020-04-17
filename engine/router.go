@@ -195,6 +195,9 @@ func (r *Router) answer(rid, uid string, ss string) error {
 }
 
 func validateId(id string) error {
+	if len(id) > 256 {
+		return fmt.Errorf("id %s too long, the maximum is %d", id, 256)
+	}
 	uid, err := url.QueryUnescape(id)
 	if err != nil {
 		return err
