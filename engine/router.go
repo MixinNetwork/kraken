@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
+	"time"
 
 	"github.com/MixinNetwork/mixin/logger"
 	"github.com/pion/sdp/v2"
@@ -46,6 +47,7 @@ func (r *Router) publish(rid, uid string, ss string) (*webrtc.SessionDescription
 	se.SetTrickle(false)
 	se.SetInterfaceFilter(func(in string) bool { return in == r.engine.Interface })
 	se.SetNAT1To1IPs([]string{r.engine.IP}, webrtc.ICECandidateTypeHost)
+	se.SetConnectionTimeout(5*time.Second, 5*time.Second)
 
 	codec := webrtc.NewRTPOpusCodec(webrtc.DefaultPayloadTypeOpus, 48000)
 	me := webrtc.MediaEngine{}
@@ -127,15 +129,25 @@ func (r *Router) subscribe(rid, uid string) (*webrtc.SessionDescription, error) 
 		if p.uid == peer.uid {
 			return
 		}
-		if peer.senders[p.cid] != nil {
+		if peer.senders[p.cid] != nil && p.track != nil {
 			return
 		}
-		if p.track == nil {
+		if peer.senders[p.cid] == nil && p.track == nil {
+			return
+		}
+		if sender := peer.senders[p.cid]; sender != nil && p.track == nil {
+			err := peer.pc.RemoveTrack(sender)
+			if err != nil {
+				logger.Printf("failed to remove sender %s from peer %s with error %s\n", p.id(), peer.id(), err.Error())
+			} else {
+				delete(peer.senders, p.cid)
+				renegotiate = true
+			}
 			return
 		}
 		sender, err := peer.pc.AddTrack(p.track)
 		if err != nil {
-			logger.Printf("failed to add sender %s to peer %s\n", p.id(), peer.id())
+			logger.Printf("failed to add sender %s to peer %s with error %s\n", p.id(), peer.id(), err.Error())
 			return
 		}
 		if id := sender.Track().ID(); id != p.cid {
