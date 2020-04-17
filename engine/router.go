@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"net/url"
 
 	"github.com/MixinNetwork/mixin/logger"
 	"github.com/pion/sdp/v2"
@@ -19,6 +20,12 @@ func NewRouter(engine *Engine) *Router {
 }
 
 func (r *Router) publish(rid, uid string, ss string) (*webrtc.SessionDescription, error) {
+	if err := validateId(rid); err != nil {
+		return nil, fmt.Errorf("invalid rid format %s %s", rid, err.Error())
+	}
+	if err := validateId(uid); err != nil {
+		return nil, fmt.Errorf("invalid uid format %s %s", uid, err.Error())
+	}
 	var offer webrtc.SessionDescription
 	err := json.Unmarshal([]byte(ss), &offer)
 	if err != nil {
@@ -173,4 +180,15 @@ func (r *Router) answer(rid, uid string, ss string) error {
 	peer.Lock()
 	defer peer.Unlock()
 	return peer.pc.SetRemoteDescription(answer)
+}
+
+func validateId(id string) error {
+	uid, err := url.QueryUnescape(id)
+	if err != nil {
+		return err
+	}
+	if eid := url.QueryEscape(uid); eid != id {
+		return fmt.Errorf("unmatch %s %s", id, eid)
+	}
+	return nil
 }
