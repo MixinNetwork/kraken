@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 
 	"github.com/MixinNetwork/mixin/logger"
 	"github.com/pion/sdp/v2"
@@ -54,7 +55,12 @@ func (r *Router) publish(rid, uid string, ss string) (*webrtc.SessionDescription
 		return nil, err
 	}
 
-	_, err = pc.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RtpTransceiverInit{
+	peer := r.engine.BuildPeer(rid, uid, pc)
+	track, err := pc.NewTrack(webrtc.DefaultPayloadTypeOpus, rand.Uint32(), peer.cid, peer.uid)
+	if err != nil {
+		return nil, err
+	}
+	_, err = pc.AddTransceiverFromTrack(track, webrtc.RtpTransceiverInit{
 		Direction: webrtc.RTPTransceiverDirectionSendrecv,
 	})
 	if err != nil {
@@ -77,7 +83,10 @@ func (r *Router) publish(rid, uid string, ss string) (*webrtc.SessionDescription
 		pc.Close()
 		return nil, err
 	}
-	r.engine.AddPeer(rid, uid, pc)
+	old := r.engine.rooms.Add(peer.rid, peer)
+	if old != nil {
+		old.Close()
+	}
 	return &answer, nil
 }
 

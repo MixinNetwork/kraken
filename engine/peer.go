@@ -20,18 +20,15 @@ type Peer struct {
 	senders map[string]*webrtc.RTPSender
 }
 
-func (engine *Engine) AddPeer(rid, uid string, pc *webrtc.PeerConnection) {
+func (engine *Engine) BuildPeer(rid, uid string, pc *webrtc.PeerConnection) *Peer {
 	cid, err := uuid.NewV4()
 	if err != nil {
 		panic(err)
 	}
 	peer := &Peer{rid: rid, uid: uid, cid: cid.String(), pc: pc}
 	peer.senders = make(map[string]*webrtc.RTPSender)
-	old := engine.rooms.Add(peer.rid, peer)
-	if old != nil {
-		old.Close()
-	}
-	engine.HandlePeer(peer)
+	peer.handle()
+	return peer
 }
 
 func (p *Peer) id() string {
@@ -45,7 +42,7 @@ func (p *Peer) Close() error {
 	return err
 }
 
-func (engine *Engine) HandlePeer(peer *Peer) {
+func (peer *Peer) handle() {
 	peer.pc.OnSignalingStateChange(func(state webrtc.SignalingState) {
 		logger.Printf("HandlePeer(%s) OnSignalingStateChange(%s)\n", peer.id(), state)
 	})

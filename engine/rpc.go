@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/MixinNetwork/mixin/logger"
@@ -107,7 +108,7 @@ func (r *R) publish(params []interface{}) (*webrtc.SessionDescription, error) {
 	if !ok {
 		return nil, fmt.Errorf("invalid sdp type %s", params[2])
 	}
-	return r.router.publish(rid, uid, sdp)
+	return r.router.publish(url.QueryEscape(rid), url.QueryEscape(uid), sdp)
 }
 
 func (r *R) trickle(params []interface{}) error {
@@ -126,7 +127,7 @@ func (r *R) trickle(params []interface{}) error {
 	if !ok {
 		return fmt.Errorf("invalid candi type %s", params[2])
 	}
-	return r.router.trickle(rid, uid, candi)
+	return r.router.trickle(url.QueryEscape(rid), url.QueryEscape(uid), candi)
 }
 
 func (r *R) subscribe(params []interface{}) (*webrtc.SessionDescription, error) {
@@ -141,7 +142,7 @@ func (r *R) subscribe(params []interface{}) (*webrtc.SessionDescription, error) 
 	if !ok {
 		return nil, fmt.Errorf("invalid uid type %s", params[1])
 	}
-	return r.router.subscribe(rid, uid)
+	return r.router.subscribe(url.QueryEscape(rid), url.QueryEscape(uid))
 }
 
 func (r *R) answer(params []interface{}) error {
@@ -160,7 +161,7 @@ func (r *R) answer(params []interface{}) error {
 	if !ok {
 		return fmt.Errorf("invalid sdp type %s", params[2])
 	}
-	return r.router.answer(rid, uid, sdp)
+	return r.router.answer(url.QueryEscape(rid), url.QueryEscape(uid), sdp)
 }
 
 func registerHandlers(router *httptreemux.TreeMux) {
