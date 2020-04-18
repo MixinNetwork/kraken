@@ -57,44 +57,64 @@ func getIPFromInterface(in string) (string, error) {
 	return "", fmt.Errorf("no address for interface %s", in)
 }
 
+type pmap struct {
+	sync.Mutex
+	m map[string]*Peer
+}
+
+func pmapAllocate() *pmap {
+	pm := new(pmap)
+	pm.m = make(map[string]*Peer)
+	return pm
+}
+
 type rmap struct {
 	sync.Mutex
-	m map[string]map[string]*Peer
+	m map[string]*pmap
 }
 
 func rmapAllocate() *rmap {
 	rm := new(rmap)
-	rm.m = make(map[string]map[string]*Peer)
+	rm.m = make(map[string]*pmap)
 	return rm
 }
 
 func (rm *rmap) Add(rid string, p *Peer) *Peer {
 	rm.Lock()
-	defer rm.Unlock()
-
 	if rm.m[rid] == nil {
-		rm.m[rid] = make(map[string]*Peer)
+		rm.m[rid] = pmapAllocate()
 	}
-	old := rm.m[rid][p.uid]
-	rm.m[rid][p.uid] = p
+	pm := rm.m[rid]
+	rm.Unlock()
+
+	pm.Lock()
+	defer pm.Unlock()
+	old := pm.m[p.uid]
+	pm.m[p.uid] = p
 	return old
 }
 
 func (rm *rmap) Get(rid, uid string) *Peer {
 	rm.Lock()
-	defer rm.Unlock()
+	pm := rm.m[rid]
+	rm.Unlock()
 
-	if rm.m[rid] == nil {
+	if pm == nil {
 		return nil
 	}
-	return rm.m[rid][uid]
+	pm.Lock()
+	defer pm.Unlock()
+	return pm.m[uid]
 }
 
 func (rm *rmap) Iterate(rid string, hook func(*Peer)) {
 	rm.Lock()
-	defer rm.Unlock()
+	pm := rm.m[rid]
+	rm.Unlock()
 
-	for _, p := range rm.m[rid] {
+	pm.Lock()
+	defer pm.Unlock()
+	for _, p := range pm.m {
 		hook(p)
 	}
 }
