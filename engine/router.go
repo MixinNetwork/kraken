@@ -160,6 +160,8 @@ func (r *Router) subscribe(rid, uid string) (*webrtc.SessionDescription, error) 
 		return &webrtc.SessionDescription{}, nil
 	}
 
+	peer.Lock()
+	defer peer.Unlock()
 	offer, err := peer.pc.CreateOffer(nil)
 	if err != nil {
 		return nil, err

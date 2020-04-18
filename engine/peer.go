@@ -61,11 +61,13 @@ func (peer *Peer) handle() {
 			return
 		}
 
+		peer.Lock()
 		lt, err := peer.pc.NewTrack(rt.PayloadType(), rt.SSRC(), peer.cid, peer.uid)
 		if err != nil {
 			panic(err)
 		}
 		peer.track = lt
+		peer.Unlock()
 
 		err = peer.copyTrack(rt, lt)
 		logger.Printf("HandlePeer(%s) OnTrack(%d, %d) end with %s\n", peer.id(), rt.PayloadType(), rt.SSRC(), err.Error())
