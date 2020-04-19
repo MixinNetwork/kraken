@@ -11,6 +11,7 @@ type Configuration struct {
 	Engine struct {
 		Interface    string `toml:"interface"`
 		MaxPeerCount int    `toml:"max-peer-count"`
+		LogLevel     int    `toml:"log-level"`
 	} `toml:"engine"`
 	RPC struct {
 		Port int `toml:"port"`
