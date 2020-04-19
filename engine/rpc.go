@@ -70,11 +70,11 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 	logger.Printf("RPC.handle(id: %s, method: %s, params: %v)\n", call.Id, call.Method, call.Params)
 	switch call.Method {
 	case "publish":
-		answer, err := impl.publish(call.Params)
+		cid, answer, err := impl.publish(call.Params)
 		if err != nil {
 			renderer.RenderError(err)
 		} else {
-			renderer.RenderData(answer)
+			renderer.RenderData(map[string]interface{}{"track": cid, "sdp": answer})
 		}
 	case "trickle":
 		err := impl.trickle(call.Params)
@@ -102,48 +102,67 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 	}
 }
 
-func (r *R) publish(params []interface{}) (*webrtc.SessionDescription, error) {
+func (r *R) publish(params []interface{}) (string, *webrtc.SessionDescription, error) {
 	if len(params) != 3 {
-		return nil, fmt.Errorf("invalid params count %d", len(params))
+		return "", nil, fmt.Errorf("invalid params count %d", len(params))
 	}
 	rid, ok := params[0].(string)
 	if !ok {
-		return nil, fmt.Errorf("invalid rid type %s", params[0])
+		return "", nil, fmt.Errorf("invalid rid type %s", params[0])
 	}
 	uid, ok := params[1].(string)
 	if !ok {
-		return nil, fmt.Errorf("invalid uid type %s", params[1])
+		return "", nil, fmt.Errorf("invalid uid type %s", params[1])
 	}
 	sdp, ok := params[2].(string)
 	if !ok {
-		return nil, fmt.Errorf("invalid sdp type %s", params[2])
+		return "", nil, fmt.Errorf("invalid sdp type %s", params[2])
 	}
 	return r.router.publish(rid, uid, sdp)
 }
 
 func (r *R) trickle(params []interface{}) error {
-	if len(params) != 3 {
+	if len(params) != 4 {
 		return fmt.Errorf("invalid params count %d", len(params))
 	}
-	rid, ok := params[0].(string)
-	if !ok {
-		return fmt.Errorf("invalid rid type %s", params[0])
+	ids, err := r.parseId(params)
+	if err != nil {
+		return err
 	}
-	uid, ok := params[1].(string)
+	candi, ok := params[3].(string)
 	if !ok {
-		return fmt.Errorf("invalid uid type %s", params[1])
+		return fmt.Errorf("invalid candi type %s", params[3])
 	}
-	candi, ok := params[2].(string)
-	if !ok {
-		return fmt.Errorf("invalid candi type %s", params[2])
-	}
-	return r.router.trickle(rid, uid, candi)
+	return r.router.trickle(ids[0], ids[1], ids[2], candi)
 }
 
 func (r *R) subscribe(params []interface{}) (*webrtc.SessionDescription, error) {
-	if len(params) != 2 {
+	if len(params) != 3 {
 		return nil, fmt.Errorf("invalid params count %d", len(params))
 	}
+	ids, err := r.parseId(params)
+	if err != nil {
+		return nil, err
+	}
+	return r.router.subscribe(ids[0], ids[1], ids[2])
+}
+
+func (r *R) answer(params []interface{}) error {
+	if len(params) != 4 {
+		return fmt.Errorf("invalid params count %d", len(params))
+	}
+	ids, err := r.parseId(params)
+	if err != nil {
+		return err
+	}
+	sdp, ok := params[3].(string)
+	if !ok {
+		return fmt.Errorf("invalid sdp type %s", params[3])
+	}
+	return r.router.answer(ids[0], ids[1], ids[2], sdp)
+}
+
+func (r *R) parseId(params []interface{}) ([]string, error) {
 	rid, ok := params[0].(string)
 	if !ok {
 		return nil, fmt.Errorf("invalid rid type %s", params[0])
@@ -152,26 +171,11 @@ func (r *R) subscribe(params []interface{}) (*webrtc.SessionDescription, error) 
 	if !ok {
 		return nil, fmt.Errorf("invalid uid type %s", params[1])
 	}
-	return r.router.subscribe(rid, uid)
-}
-
-func (r *R) answer(params []interface{}) error {
-	if len(params) != 3 {
-		return fmt.Errorf("invalid params count %d", len(params))
-	}
-	rid, ok := params[0].(string)
+	cid, ok := params[2].(string)
 	if !ok {
-		return fmt.Errorf("invalid rid type %s", params[0])
+		return nil, fmt.Errorf("invalid cid type %s", params[2])
 	}
-	uid, ok := params[1].(string)
-	if !ok {
-		return fmt.Errorf("invalid uid type %s", params[1])
-	}
-	sdp, ok := params[2].(string)
-	if !ok {
-		return fmt.Errorf("invalid sdp type %s", params[2])
-	}
-	return r.router.answer(rid, uid, sdp)
+	return []string{rid, uid, cid}, nil
 }
 
 func registerHandlers(router *httptreemux.TreeMux) {

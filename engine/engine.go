@@ -59,11 +59,13 @@ func getIPFromInterface(in string) (string, error) {
 
 type pmap struct {
 	sync.Mutex
-	m map[string]*Peer
+	id string
+	m  map[string]*Peer
 }
 
-func pmapAllocate() *pmap {
+func pmapAllocate(id string) *pmap {
 	pm := new(pmap)
+	pm.id = id
 	pm.m = make(map[string]*Peer)
 	return pm
 }
@@ -79,42 +81,23 @@ func rmapAllocate() *rmap {
 	return rm
 }
 
-func (rm *rmap) Add(rid string, p *Peer) *Peer {
+func (engine *Engine) GetRoom(rid string) *pmap {
+	rm := engine.rooms
 	rm.Lock()
+	defer rm.Unlock()
 	if rm.m[rid] == nil {
-		rm.m[rid] = pmapAllocate()
+		rm.m[rid] = pmapAllocate(rid)
 	}
-	pm := rm.m[rid]
-	rm.Unlock()
-
-	pm.Lock()
-	defer pm.Unlock()
-	old := pm.m[p.uid]
-	pm.m[p.uid] = p
-	return old
+	return rm.m[rid]
 }
 
-func (rm *rmap) Get(rid, uid string) *Peer {
-	rm.Lock()
-	pm := rm.m[rid]
-	rm.Unlock()
-
-	if pm == nil {
-		return nil
+func (room *pmap) get(uid, cid string) (*Peer, error) {
+	peer := room.m[uid]
+	if peer == nil {
+		return nil, fmt.Errorf("peer %s not found in %s", uid, room.id)
 	}
-	pm.Lock()
-	defer pm.Unlock()
-	return pm.m[uid]
-}
-
-func (rm *rmap) Iterate(rid string, hook func(*Peer)) {
-	rm.Lock()
-	pm := rm.m[rid]
-	rm.Unlock()
-
-	pm.Lock()
-	defer pm.Unlock()
-	for _, p := range pm.m {
-		hook(p)
+	if peer.cid != cid {
+		return nil, fmt.Errorf("peer %s track not match %s %s in %s", uid, cid, peer.cid, room.id)
 	}
+	return peer, nil
 }
