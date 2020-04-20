@@ -11,6 +11,11 @@ import (
 	"github.com/pion/webrtc/v2"
 )
 
+type Sender struct {
+	id  string
+	rtp *webrtc.RTPSender
+}
+
 type Peer struct {
 	sync.Mutex
 	rid     string
@@ -18,7 +23,7 @@ type Peer struct {
 	cid     string
 	pc      *webrtc.PeerConnection
 	track   *webrtc.Track
-	senders map[string]*webrtc.RTPSender
+	senders map[string]*Sender
 	buffer  chan []byte
 }
 
@@ -29,7 +34,7 @@ func (engine *Engine) BuildPeer(rid, uid string, pc *webrtc.PeerConnection) *Pee
 	}
 	peer := &Peer{rid: rid, uid: uid, cid: cid.String(), pc: pc}
 	peer.buffer = make(chan []byte, 1024)
-	peer.senders = make(map[string]*webrtc.RTPSender)
+	peer.senders = make(map[string]*Sender)
 	peer.handle()
 	return peer
 }

@@ -139,42 +139,34 @@ func (r *Router) subscribe(rid, uid, cid string) (*webrtc.SessionDescription, er
 
 	var renegotiate bool
 	for _, p := range room.m {
-		logger.Debugf("subscribe lock debug %s, %s, %s, %s 1\n", rid, uid, cid, p.uid)
 		if p.uid == peer.uid {
 			continue
 		}
-		if peer.senders[p.cid] != nil && p.track != nil {
-			continue
-		}
-		if peer.senders[p.cid] == nil && p.track == nil {
-			continue
-		}
-		logger.Debugf("subscribe lock debug %s, %s, %s, %s 2\n", rid, uid, cid, p.uid)
-		if sender := peer.senders[p.cid]; sender != nil && p.track == nil {
-			err := peer.pc.RemoveTrack(sender)
+		p.Lock()
+		old := peer.senders[p.uid]
+		cid, track := p.cid, p.track
+
+		if old != nil && (track == nil || old.id != cid) {
+			err := peer.pc.RemoveTrack(old.rtp)
 			if err != nil {
 				logger.Printf("failed to remove sender %s from peer %s with error %s\n", p.id(), peer.id(), err.Error())
 			} else {
-				delete(peer.senders, p.cid)
+				delete(peer.senders, p.uid)
 				renegotiate = true
 			}
-			logger.Debugf("subscribe lock debug %s, %s, %s, %s 3\n", rid, uid, cid, p.uid)
-			continue
 		}
-		logger.Debugf("subscribe lock debug %s, %s, %s, %s 4\n", rid, uid, cid, p.uid)
-		sender, err := peer.pc.AddTrack(p.track)
-		logger.Debugf("subscribe lock debug %s, %s, %s, %s 5\n", rid, uid, cid, p.uid)
-		if err != nil {
-			logger.Printf("failed to add sender %s to peer %s with error %s\n", p.id(), peer.id(), err.Error())
-			continue
+		if track != nil && (old == nil || old.id != cid) {
+			sender, err := peer.pc.AddTrack(track)
+			if err != nil {
+				logger.Printf("failed to add sender %s to peer %s with error %s\n", p.id(), peer.id(), err.Error())
+			} else if id := sender.Track().ID(); id != cid {
+				panic(fmt.Errorf("malformed peer and track id %s %s", cid, id))
+			} else {
+				peer.senders[p.uid] = &Sender{id: cid, rtp: sender}
+				renegotiate = true
+			}
 		}
-		logger.Debugf("subscribe lock debug %s, %s, %s, %s 6\n", rid, uid, cid, p.uid)
-		if id := sender.Track().ID(); id != p.cid {
-			panic(fmt.Errorf("malformed peer and track id %s %s", p.cid, id))
-		}
-		logger.Debugf("subscribe lock debug %s, %s, %s, %s 7\n", rid, uid, cid, p.uid)
-		peer.senders[p.cid] = sender
-		renegotiate = true
+		p.Unlock()
 	}
 	if !renegotiate {
 		return &webrtc.SessionDescription{}, nil
