@@ -154,8 +154,7 @@ func (r *Router) subscribe(rid, uid, cid string) (*webrtc.SessionDescription, er
 				delete(peer.senders, p.uid)
 				renegotiate = true
 			}
-		}
-		if track != nil && (old == nil || old.id != cid) {
+		} else if track != nil && (old == nil || old.id != cid) {
 			sender, err := peer.pc.AddTrack(track)
 			if err != nil {
 				logger.Printf("failed to add sender %s to peer %s with error %s\n", p.id(), peer.id(), err.Error())
