@@ -113,9 +113,8 @@ func (r *Router) trickle(rid, uid, cid string, candi string) error {
 
 	room := r.engine.GetRoom(rid)
 	room.Lock()
-	defer room.Unlock()
-
 	peer, err := room.get(uid, cid)
+	room.Unlock()
 	if err != nil {
 		return err
 	}
@@ -197,9 +196,8 @@ func (r *Router) answer(rid, uid, cid string, ss string) error {
 
 	room := r.engine.GetRoom(rid)
 	room.Lock()
-	defer room.Unlock()
-
 	peer, err := room.get(uid, cid)
+	room.Unlock()
 	if err != nil {
 		return err
 	}
