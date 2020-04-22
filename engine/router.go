@@ -137,10 +137,6 @@ func (r *Router) subscribe(rid, uid, cid string) (*webrtc.SessionDescription, er
 	peer.Lock()
 	defer peer.Unlock()
 
-	if peer.track == nil {
-		return &webrtc.SessionDescription{}, nil
-	}
-
 	var renegotiate bool
 	for _, p := range room.m {
 		if p.uid == peer.uid {

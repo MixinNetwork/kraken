@@ -96,6 +96,9 @@ func (room *pmap) get(uid, cid string) (*Peer, error) {
 	if peer == nil {
 		return nil, fmt.Errorf("peer %s not found in %s", uid, room.id)
 	}
+	if peer.cid == peerTrackClosedId {
+		return nil, fmt.Errorf("peer %s not found in %s", uid, room.id)
+	}
 	if peer.cid != cid {
 		return nil, fmt.Errorf("peer %s track not match %s %s in %s", uid, cid, peer.cid, room.id)
 	}
