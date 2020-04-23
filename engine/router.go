@@ -204,7 +204,19 @@ func (r *Router) answer(rid, uid, cid string, ss string) error {
 	peer.Lock()
 	defer peer.Unlock()
 
-	return peer.pc.SetRemoteDescription(answer)
+	renegotiated := make(chan error, 1)
+	go func() {
+		err := peer.pc.SetRemoteDescription(answer)
+		logger.Printf("answer(%s,%s,%s) SetRemoteDescription with %v\n", rid, uid, cid, err)
+		renegotiated <- err
+	}()
+	select {
+	case err := <-renegotiated:
+		return err
+	case <-time.After(peerTrackConnectionTimeout):
+		logger.Printf("answer(%s,%s,%s) timeout\n", rid, uid, cid)
+		return fmt.Errorf("timeout")
+	}
 }
 
 func validateId(id string) error {
