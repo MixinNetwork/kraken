@@ -8,6 +8,7 @@ import (
 
 	"github.com/MixinNetwork/mixin/logger"
 	"github.com/gofrs/uuid"
+	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v2"
 )
 
@@ -30,7 +31,7 @@ type Peer struct {
 	pc        *webrtc.PeerConnection
 	track     *webrtc.Track
 	senders   map[string]*Sender
-	buffer    chan []byte
+	buffer    chan *rtp.Packet
 	connected chan bool
 }
 
@@ -41,7 +42,7 @@ func (engine *Engine) BuildPeer(rid, uid string, pc *webrtc.PeerConnection) *Pee
 	}
 	peer := &Peer{rid: rid, uid: uid, cid: cid.String(), pc: pc}
 	peer.connected = make(chan bool, 1)
-	peer.buffer = make(chan []byte, 1024)
+	peer.buffer = make(chan *rtp.Packet, 48000)
 	peer.senders = make(map[string]*Sender)
 	peer.handle()
 	return peer
@@ -105,26 +106,22 @@ func (peer *Peer) handle() {
 func (peer *Peer) copyTrack(src, dst *webrtc.Track) error {
 	go func() error {
 		for {
-			buf := make([]byte, 256)
-			i, err := src.Read(buf)
+			pkt, err := src.ReadRTP()
 			if err == io.EOF {
 				return nil
 			}
 			if err != nil {
 				return err
 			}
-			if i >= len(buf) {
-				return fmt.Errorf("track packet size too large %d", i)
-			}
-			peer.buffer <- buf[:i]
+			peer.buffer <- pkt
 		}
 	}()
 
 	for {
 		timer := time.NewTimer(peerTrackReadTimeout)
 		select {
-		case buf := <-peer.buffer:
-			dst.Write(buf)
+		case pkt := <-peer.buffer:
+			dst.WriteRTP(pkt)
 		case <-timer.C:
 			return fmt.Errorf("peer track read timeout")
 		}
