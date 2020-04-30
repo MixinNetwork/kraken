@@ -19,7 +19,7 @@ const (
 	peerTrackReadTimeout       = 3 * time.Second
 	rtpBufferSize              = 65536
 	rtpClockRate               = 48000
-	nackThreshold              = rtpClockRate / 4
+	rtpPacketExpiration        = rtpClockRate
 )
 
 type Sender struct {
@@ -46,6 +46,7 @@ type Peer struct {
 	queue       chan *rtp.Packet
 	nack        chan *NackRequest
 	timestamp   uint32
+	sequence    uint16
 	connected   chan bool
 }
 
@@ -137,13 +138,9 @@ func (peer *Peer) copyTrack(src, dst *webrtc.Track) error {
 		timer := time.NewTimer(peerTrackReadTimeout)
 		select {
 		case r := <-peer.nack:
-			peer.HandleNack(r)
+			peer.handleNack(r)
 		case pkt := <-peer.queue:
-			if pkt.Timestamp > peer.timestamp || pkt.Timestamp == 0 {
-				peer.timestamp = pkt.Timestamp
-			}
-			peer.buffer[pkt.SequenceNumber] = pkt
-			dst.WriteRTP(pkt)
+			peer.handlePacket(dst, pkt)
 		case <-timer.C:
 			return fmt.Errorf("peer track read timeout")
 		}
@@ -172,7 +169,23 @@ func (peer *Peer) LoopRTCP(uid string, sender *Sender) error {
 	}
 }
 
-func (peer *Peer) HandleNack(r *NackRequest) error {
+func (peer *Peer) handlePacket(dst *webrtc.Track, pkt *rtp.Packet) error {
+	old := peer.buffer[pkt.SequenceNumber]
+	if old != nil && old.Timestamp >= pkt.Timestamp {
+		return nil
+	}
+	if peer.timestamp > pkt.Timestamp+rtpPacketExpiration {
+		return nil
+	}
+	if pkt.Timestamp > peer.timestamp {
+		peer.timestamp = pkt.Timestamp
+		peer.sequence = pkt.SequenceNumber
+	}
+	peer.buffer[pkt.SequenceNumber] = pkt
+	return dst.WriteRTP(pkt)
+}
+
+func (peer *Peer) handleNack(r *NackRequest) error {
 	peer.RLock()
 	sender := peer.subscribers[r.uid]
 	peer.RUnlock()
@@ -186,11 +199,11 @@ func (peer *Peer) HandleNack(r *NackRequest) error {
 		if pkt == nil {
 			continue
 		}
-		if peer.timestamp >= pkt.Timestamp && peer.timestamp-pkt.Timestamp < nackThreshold ||
-			peer.timestamp < pkt.Timestamp && ^uint32(0)-pkt.Timestamp+peer.timestamp < nackThreshold {
-			i, err := sender.rtp.SendRTP(&pkt.Header, pkt.Payload)
-			logger.Verbosef("HandleNack(%s,%s,%s,%d) with %d %v\n", peer.id(), r.uid, r.cid, seq, i, err)
+		if peer.timestamp > pkt.Timestamp+rtpPacketExpiration {
+			continue
 		}
+		i, err := sender.rtp.SendRTP(&pkt.Header, pkt.Payload)
+		logger.Verbosef("HandleNack(%s,%s,%s,%d) with %d %v\n", peer.id(), r.uid, r.cid, seq, i, err)
 	}
 	return nil
 }
