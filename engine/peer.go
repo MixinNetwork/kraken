@@ -31,7 +31,7 @@ type Peer struct {
 	pc        *webrtc.PeerConnection
 	track     *webrtc.Track
 	senders   map[string]*Sender
-	buffer    chan *rtp.Packet
+	queue     chan *rtp.Packet
 	connected chan bool
 }
 
@@ -42,7 +42,7 @@ func (engine *Engine) BuildPeer(rid, uid string, pc *webrtc.PeerConnection) *Pee
 	}
 	peer := &Peer{rid: rid, uid: uid, cid: cid.String(), pc: pc}
 	peer.connected = make(chan bool, 1)
-	peer.buffer = make(chan *rtp.Packet, 48000)
+	peer.queue = make(chan *rtp.Packet, 48000)
 	peer.senders = make(map[string]*Sender)
 	peer.handle()
 	return peer
@@ -113,14 +113,14 @@ func (peer *Peer) copyTrack(src, dst *webrtc.Track) error {
 			if err != nil {
 				return err
 			}
-			peer.buffer <- pkt
+			peer.queue <- pkt
 		}
 	}()
 
 	for {
 		timer := time.NewTimer(peerTrackReadTimeout)
 		select {
-		case pkt := <-peer.buffer:
+		case pkt := <-peer.queue:
 			dst.WriteRTP(pkt)
 		case <-timer.C:
 			return fmt.Errorf("peer track read timeout")
