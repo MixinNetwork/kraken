@@ -21,7 +21,7 @@ func main() {
 		*cp = filepath.Join(usr.HomeDir, (*cp)[2:])
 	}
 
-	logger.SetLevel(logger.INFO)
+	logger.SetLevel(logger.VERBOSE)
 
 	switch *sr {
 	case "engine":

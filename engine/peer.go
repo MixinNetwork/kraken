@@ -163,6 +163,7 @@ func (peer *Peer) LoopRTCP(uid string, sender *Sender) error {
 			case *rtcp.TransportLayerNack:
 				nack := pkt.(*rtcp.TransportLayerNack)
 				for _, pair := range nack.Nacks {
+					logger.Verbosef("LoopRTCP(%s,%s,%s) TransportLayerNack %v\n", peer.id(), uid, sender.id, pair.PacketList())
 					peer.nack <- &NackRequest{uid: uid, cid: sender.id, pair: &pair}
 				}
 			default:
@@ -182,6 +183,9 @@ func (peer *Peer) HandleNack(r *NackRequest) error {
 
 	for _, seq := range r.pair.PacketList() {
 		pkt := peer.buffer[seq]
+		if pkt == nil {
+			continue
+		}
 		if peer.timestamp >= pkt.Timestamp && peer.timestamp-pkt.Timestamp < nackThreshold ||
 			peer.timestamp < pkt.Timestamp && ^uint32(0)-pkt.Timestamp+peer.timestamp < nackThreshold {
 			i, err := sender.rtp.SendRTP(&pkt.Header, pkt.Payload)
