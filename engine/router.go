@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/MixinNetwork/mixin/logger"
+	"github.com/gofrs/uuid"
 	"github.com/pion/sdp/v2"
 	"github.com/pion/webrtc/v2"
 )
@@ -18,6 +19,21 @@ type Router struct {
 
 func NewRouter(engine *Engine) *Router {
 	return &Router{engine: engine}
+}
+
+func (r *Router) list(rid string) ([]map[string]interface{}, error) {
+	room := r.engine.GetRoom(rid)
+	room.Lock()
+	defer room.Unlock()
+	peers := make([]map[string]interface{}, len(room.m))
+	for _, p := range room.m {
+		cid := uuid.FromStringOrNil(p.cid)
+		peers[len(peers)] = map[string]interface{}{
+			"id":    p.uid,
+			"track": cid.String(),
+		}
+	}
+	return peers, nil
 }
 
 func (r *Router) publish(rid, uid string, ss string) (string, *webrtc.SessionDescription, error) {

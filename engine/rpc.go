@@ -69,6 +69,13 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 	renderer := NewRender(w, call.Id)
 	logger.Printf("RPC.handle(id: %s, method: %s, params: %v)\n", call.Id, call.Method, call.Params)
 	switch call.Method {
+	case "list":
+		peers, err := impl.list(call.Params)
+		if err != nil {
+			renderer.RenderError(err)
+		} else {
+			renderer.RenderData(map[string]interface{}{"peers": peers})
+		}
 	case "publish":
 		cid, answer, err := impl.publish(call.Params)
 		if err != nil {
@@ -100,6 +107,17 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 	default:
 		renderer.RenderError(fmt.Errorf("invalid method %s", call.Method))
 	}
+}
+
+func (r *R) list(params []interface{}) ([]map[string]interface{}, error) {
+	if len(params) != 1 {
+		return nil, fmt.Errorf("invalid params count %d", len(params))
+	}
+	rid, ok := params[0].(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid rid type %s", params[0])
+	}
+	return r.router.list(rid)
 }
 
 func (r *R) publish(params []interface{}) (string, *webrtc.SessionDescription, error) {
