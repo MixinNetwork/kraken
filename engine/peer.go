@@ -19,7 +19,8 @@ const (
 	peerTrackReadTimeout       = 3 * time.Second
 	rtpBufferSize              = 65536
 	rtpClockRate               = 48000
-	rtpPacketExpiration        = rtpClockRate
+	rtpPacketSequenceMax       = ^uint16(0)
+	rtpPacketExpiration        = rtpClockRate / 2
 )
 
 type Sender struct {
@@ -43,6 +44,7 @@ type Peer struct {
 	publishers  map[string]*Sender
 	subscribers map[string]*Sender
 	buffer      [rtpBufferSize]*rtp.Packet
+	lost        chan *rtp.Header
 	queue       chan *rtp.Packet
 	nack        chan *NackRequest
 	timestamp   uint32
@@ -57,6 +59,7 @@ func (engine *Engine) BuildPeer(rid, uid string, pc *webrtc.PeerConnection) *Pee
 	}
 	peer := &Peer{rid: rid, uid: uid, cid: cid.String(), pc: pc}
 	peer.connected = make(chan bool, 1)
+	peer.lost = make(chan *rtp.Header, 17)
 	peer.queue = make(chan *rtp.Packet, 48000)
 	peer.nack = make(chan *NackRequest, 48000)
 	peer.publishers = make(map[string]*Sender)
@@ -134,6 +137,47 @@ func (peer *Peer) copyTrack(src, dst *webrtc.Track) error {
 		}
 	}()
 
+	go func() error {
+		ticker := time.NewTicker(rtpPacketExpiration / 4)
+		defer ticker.Stop()
+
+		lost := make([]*rtp.Header, 0)
+		for track := peer.track; track != nil; {
+			select {
+			case p := <-peer.lost:
+				lost = append(lost, p)
+			case <-ticker.C:
+			}
+			if len(lost) == 0 {
+				continue
+			}
+			fsn := lost[0]
+			if len(lost) < 16 && fsn.Timestamp+rtpPacketExpiration/4 > peer.timestamp {
+				continue
+			}
+			blp := uint16(0)
+			pair := rtcp.NackPair{PacketID: fsn.SequenceNumber}
+			for _, p := range lost {
+				if p.SequenceNumber <= pair.PacketID {
+					continue
+				}
+				blp = blp | (1 << (p.SequenceNumber - pair.PacketID - 1))
+			}
+			pair.LostPackets = rtcp.PacketBitmap(blp)
+			pkt := &rtcp.TransportLayerNack{
+				SenderSSRC: fsn.SSRC,
+				MediaSSRC:  fsn.SSRC,
+				Nacks:      []rtcp.NackPair{pair},
+			}
+			err := peer.pc.WriteRTCP([]rtcp.Packet{pkt})
+			if err != nil {
+				return err
+			}
+			lost = make([]*rtp.Header, 0)
+		}
+		return nil
+	}()
+
 	for {
 		timer := time.NewTimer(peerTrackReadTimeout)
 		select {
@@ -177,12 +221,44 @@ func (peer *Peer) handlePacket(dst *webrtc.Track, pkt *rtp.Packet) error {
 	if peer.timestamp > pkt.Timestamp+rtpPacketExpiration {
 		return nil
 	}
+	if peer.timestamp == pkt.Timestamp {
+		return nil
+	}
 	if pkt.Timestamp > peer.timestamp {
+		peer.handleLost(pkt)
 		peer.timestamp = pkt.Timestamp
 		peer.sequence = pkt.SequenceNumber
 	}
 	peer.buffer[pkt.SequenceNumber] = pkt
 	return dst.WriteRTP(pkt)
+}
+
+func (peer *Peer) handleLost(pkt *rtp.Packet) error {
+	gap := pkt.SequenceNumber - peer.sequence
+	if pkt.SequenceNumber < peer.sequence {
+		gap = rtpPacketSequenceMax - peer.sequence + pkt.SequenceNumber + 1
+	}
+	if peer.timestamp+rtpPacketExpiration/2 < pkt.Timestamp {
+		return nil
+	}
+	next := (uint32(peer.sequence) + 1) % 65536
+	if gap > 17 {
+		next = (uint32(peer.sequence) + uint32(gap-17)) % 65536
+		gap = 17
+	}
+	if next+uint32(gap) > 65536 {
+		gap = uint16((next + uint32(gap)) % 65536)
+		next = 0
+	}
+	for i := uint16(1); i < gap; i++ {
+		peer.lost <- &rtp.Header{
+			SequenceNumber: uint16(next),
+			Timestamp:      peer.timestamp,
+			SSRC:           pkt.SSRC,
+		}
+		next = next + 1
+	}
+	return nil
 }
 
 func (peer *Peer) handleNack(r *NackRequest) error {
