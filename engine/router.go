@@ -25,13 +25,16 @@ func (r *Router) list(rid string) ([]map[string]interface{}, error) {
 	room := r.engine.GetRoom(rid)
 	room.Lock()
 	defer room.Unlock()
-	peers := make([]map[string]interface{}, len(room.m))
+	peers := make([]map[string]interface{}, 0)
 	for _, p := range room.m {
 		cid := uuid.FromStringOrNil(p.cid)
-		peers[len(peers)] = map[string]interface{}{
+		if cid.String() == uuid.Nil.String() {
+			continue
+		}
+		peers = append(peers, map[string]interface{}{
 			"id":    p.uid,
 			"track": cid.String(),
-		}
+		})
 	}
 	return peers, nil
 }
