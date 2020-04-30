@@ -177,7 +177,6 @@ func (peer *Peer) LoopLost() error {
 			}
 			blp = blp | (1 << (p.SequenceNumber - pair.PacketID - 1))
 		}
-		logger.Verbosef("LoopLost(%s) %v\n", peer.id(), pair.PacketList())
 		pair.LostPackets = rtcp.PacketBitmap(blp)
 		pkt := &rtcp.TransportLayerNack{
 			SenderSSRC: fsn.SSRC,
@@ -185,6 +184,7 @@ func (peer *Peer) LoopLost() error {
 			Nacks:      []rtcp.NackPair{pair},
 		}
 		err := peer.pc.WriteRTCP([]rtcp.Packet{pkt})
+		logger.Verbosef("LoopLost(%s) %v with %v\n", peer.id(), pair.PacketList(), err)
 		if err != nil {
 			return err
 		}
