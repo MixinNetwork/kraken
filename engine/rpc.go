@@ -204,6 +204,7 @@ func registerHandlers(router *httptreemux.TreeMux) {
 		render.New().JSON(w, http.StatusNotFound, map[string]interface{}{"error": "not found"})
 	}
 	router.PanicHandler = func(w http.ResponseWriter, r *http.Request, rcv interface{}) {
+		logger.Println(rcv)
 		render.New().JSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "server error"})
 	}
 }
