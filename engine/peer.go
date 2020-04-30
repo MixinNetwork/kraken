@@ -152,7 +152,7 @@ func (peer *Peer) copyTrack(src, dst *webrtc.Track) error {
 	}
 }
 func (peer *Peer) LoopLost() error {
-	ticker := time.NewTicker(rtpPacketExpiration / 4)
+	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
 	lost := make([]*rtp.Header, 0)
