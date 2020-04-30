@@ -117,6 +117,7 @@ func (peer *Peer) handle() {
 		peer.track = lt
 		peer.Unlock()
 
+		go peer.LoopLost()
 		err = peer.copyTrack(rt, lt)
 		logger.Printf("HandlePeer(%s) OnTrack(%d, %d) end with %s\n", peer.id(), rt.PayloadType(), rt.SSRC(), err.Error())
 		peer.Close()
@@ -137,47 +138,6 @@ func (peer *Peer) copyTrack(src, dst *webrtc.Track) error {
 		}
 	}()
 
-	go func() error {
-		ticker := time.NewTicker(rtpPacketExpiration / 4)
-		defer ticker.Stop()
-
-		lost := make([]*rtp.Header, 0)
-		for track := peer.track; track != nil; {
-			select {
-			case p := <-peer.lost:
-				lost = append(lost, p)
-			case <-ticker.C:
-			}
-			if len(lost) == 0 {
-				continue
-			}
-			fsn := lost[0]
-			if len(lost) < 16 && fsn.Timestamp+rtpPacketExpiration/4 > peer.timestamp {
-				continue
-			}
-			blp := uint16(0)
-			pair := rtcp.NackPair{PacketID: fsn.SequenceNumber}
-			for _, p := range lost {
-				if p.SequenceNumber <= pair.PacketID {
-					continue
-				}
-				blp = blp | (1 << (p.SequenceNumber - pair.PacketID - 1))
-			}
-			pair.LostPackets = rtcp.PacketBitmap(blp)
-			pkt := &rtcp.TransportLayerNack{
-				SenderSSRC: fsn.SSRC,
-				MediaSSRC:  fsn.SSRC,
-				Nacks:      []rtcp.NackPair{pair},
-			}
-			err := peer.pc.WriteRTCP([]rtcp.Packet{pkt})
-			if err != nil {
-				return err
-			}
-			lost = make([]*rtp.Header, 0)
-		}
-		return nil
-	}()
-
 	for {
 		timer := time.NewTimer(peerTrackReadTimeout)
 		select {
@@ -190,6 +150,47 @@ func (peer *Peer) copyTrack(src, dst *webrtc.Track) error {
 		}
 		timer.Stop()
 	}
+}
+func (peer *Peer) LoopLost() error {
+	ticker := time.NewTicker(rtpPacketExpiration / 4)
+	defer ticker.Stop()
+
+	lost := make([]*rtp.Header, 0)
+	for track := peer.track; track != nil; {
+		select {
+		case p := <-peer.lost:
+			lost = append(lost, p)
+		case <-ticker.C:
+		}
+		if len(lost) == 0 {
+			continue
+		}
+		fsn := lost[0]
+		if len(lost) < 16 && fsn.Timestamp+rtpPacketExpiration/4 > peer.timestamp {
+			continue
+		}
+		blp := uint16(0)
+		pair := rtcp.NackPair{PacketID: fsn.SequenceNumber}
+		for _, p := range lost {
+			if p.SequenceNumber <= pair.PacketID {
+				continue
+			}
+			blp = blp | (1 << (p.SequenceNumber - pair.PacketID - 1))
+		}
+		logger.Verbosef("LoopLost(%s) %v\n", peer.id(), pair.PacketList())
+		pair.LostPackets = rtcp.PacketBitmap(blp)
+		pkt := &rtcp.TransportLayerNack{
+			SenderSSRC: fsn.SSRC,
+			MediaSSRC:  fsn.SSRC,
+			Nacks:      []rtcp.NackPair{pair},
+		}
+		err := peer.pc.WriteRTCP([]rtcp.Packet{pkt})
+		if err != nil {
+			return err
+		}
+		lost = make([]*rtp.Header, 0)
+	}
+	return nil
 }
 
 func (peer *Peer) LoopRTCP(uid string, sender *Sender) error {
