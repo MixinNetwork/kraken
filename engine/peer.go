@@ -8,6 +8,7 @@ import (
 
 	"github.com/MixinNetwork/mixin/logger"
 	"github.com/gofrs/uuid"
+	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v2"
 )
@@ -16,6 +17,9 @@ const (
 	peerTrackClosedId          = "CLOSED"
 	peerTrackConnectionTimeout = 10 * time.Second
 	peerTrackReadTimeout       = 3 * time.Second
+	rtpBufferSize              = 65536
+	rtpClockRate               = 48000
+	nackThreshold              = rtpClockRate / 4
 )
 
 type Sender struct {
@@ -23,16 +27,26 @@ type Sender struct {
 	rtp *webrtc.RTPSender
 }
 
+type NackRequest struct {
+	uid  string
+	cid  string
+	pair *rtcp.NackPair
+}
+
 type Peer struct {
-	sync.Mutex
-	rid       string
-	uid       string
-	cid       string
-	pc        *webrtc.PeerConnection
-	track     *webrtc.Track
-	senders   map[string]*Sender
-	queue     chan *rtp.Packet
-	connected chan bool
+	sync.RWMutex
+	rid         string
+	uid         string
+	cid         string
+	pc          *webrtc.PeerConnection
+	track       *webrtc.Track
+	publishers  map[string]*Sender
+	subscribers map[string]*Sender
+	buffer      [rtpBufferSize]*rtp.Packet
+	queue       chan *rtp.Packet
+	nack        chan *NackRequest
+	timestamp   uint32
+	connected   chan bool
 }
 
 func (engine *Engine) BuildPeer(rid, uid string, pc *webrtc.PeerConnection) *Peer {
@@ -43,7 +57,9 @@ func (engine *Engine) BuildPeer(rid, uid string, pc *webrtc.PeerConnection) *Pee
 	peer := &Peer{rid: rid, uid: uid, cid: cid.String(), pc: pc}
 	peer.connected = make(chan bool, 1)
 	peer.queue = make(chan *rtp.Packet, 48000)
-	peer.senders = make(map[string]*Sender)
+	peer.nack = make(chan *NackRequest, 48000)
+	peer.publishers = make(map[string]*Sender)
+	peer.subscribers = make(map[string]*Sender)
 	peer.handle()
 	return peer
 }
@@ -120,11 +136,57 @@ func (peer *Peer) copyTrack(src, dst *webrtc.Track) error {
 	for {
 		timer := time.NewTimer(peerTrackReadTimeout)
 		select {
+		case r := <-peer.nack:
+			peer.HandleNack(r)
 		case pkt := <-peer.queue:
+			if pkt.Timestamp > peer.timestamp || pkt.Timestamp == 0 {
+				peer.timestamp = pkt.Timestamp
+			}
+			peer.buffer[pkt.SequenceNumber] = pkt
 			dst.WriteRTP(pkt)
 		case <-timer.C:
 			return fmt.Errorf("peer track read timeout")
 		}
 		timer.Stop()
 	}
+}
+
+func (peer *Peer) LoopRTCP(uid string, sender *Sender) error {
+	for {
+		pkts, err := sender.rtp.ReadRTCP()
+		if err != nil {
+			logger.Printf("LoopRTCP(%s,%s,%s) with %v\n", peer.id(), uid, sender.id, err)
+			return err
+		}
+		for _, pkt := range pkts {
+			switch pkt.(type) {
+			case *rtcp.TransportLayerNack:
+				nack := pkt.(*rtcp.TransportLayerNack)
+				for _, pair := range nack.Nacks {
+					peer.nack <- &NackRequest{uid: uid, cid: sender.id, pair: &pair}
+				}
+			default:
+			}
+		}
+	}
+}
+
+func (peer *Peer) HandleNack(r *NackRequest) error {
+	peer.RLock()
+	sender := peer.subscribers[r.uid]
+	peer.RUnlock()
+
+	if sender == nil || sender.id != r.cid {
+		return nil
+	}
+
+	for _, seq := range r.pair.PacketList() {
+		pkt := peer.buffer[seq]
+		if peer.timestamp >= pkt.Timestamp && peer.timestamp-pkt.Timestamp < nackThreshold ||
+			peer.timestamp < pkt.Timestamp && ^uint32(0)-pkt.Timestamp+peer.timestamp < nackThreshold {
+			i, err := sender.rtp.SendRTP(&pkt.Header, pkt.Payload)
+			logger.Verbosef("HandleNack(%s,%s,%s,%d) with %d %v\n", peer.id(), r.uid, r.cid, seq, i, err)
+		}
+	}
+	return nil
 }

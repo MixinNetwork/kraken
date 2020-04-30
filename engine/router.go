@@ -161,28 +161,31 @@ func (r *Router) subscribe(rid, uid, cid string) (*webrtc.SessionDescription, er
 			continue
 		}
 		p.Lock()
-		old := peer.senders[p.uid]
-		cid, track := p.cid, p.track
+		old := peer.publishers[p.uid]
 
-		if old != nil && (track == nil || old.id != cid) {
+		if old != nil && (p.track == nil || old.id != p.cid) {
 			err := peer.pc.RemoveTrack(old.rtp)
 			if err != nil {
 				logger.Printf("failed to remove sender %s from peer %s with error %s\n", p.id(), peer.id(), err.Error())
 			} else {
-				delete(peer.senders, p.uid)
+				delete(peer.publishers, p.uid)
+				delete(p.subscribers, peer.uid)
 				renegotiate = true
 			}
-		} else if track != nil && (old == nil || old.id != cid) {
-			sender, err := peer.pc.AddTrack(track)
+		} else if p.track != nil && (old == nil || old.id != p.cid) {
+			sender, err := peer.pc.AddTrack(p.track)
 			if err != nil {
 				logger.Printf("failed to add sender %s to peer %s with error %s\n", p.id(), peer.id(), err.Error())
-			} else if id := sender.Track().ID(); id != cid {
-				panic(fmt.Errorf("malformed peer and track id %s %s", cid, id))
+			} else if id := sender.Track().ID(); id != p.cid {
+				panic(fmt.Errorf("malformed peer and track id %s %s", p.cid, id))
 			} else {
-				peer.senders[p.uid] = &Sender{id: cid, rtp: sender}
+				peer.publishers[p.uid] = &Sender{id: p.cid, rtp: sender}
+				p.subscribers[peer.uid] = &Sender{id: peer.cid, rtp: sender}
+				go p.LoopRTCP(peer.uid, p.subscribers[peer.uid])
 				renegotiate = true
 			}
 		}
+
 		p.Unlock()
 	}
 	if !renegotiate {
