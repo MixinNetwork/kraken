@@ -43,7 +43,7 @@ type Peer struct {
 	track       *webrtc.Track
 	publishers  map[string]*Sender
 	subscribers map[string]*Sender
-	buffer      [rtpBufferSize]*rtp.Packet
+	buffer      []*rtp.Packet
 	lost        chan *rtp.Header
 	queue       chan *rtp.Packet
 	nack        chan *NackRequest
@@ -64,6 +64,7 @@ func (engine *Engine) BuildPeer(rid, uid string, pc *webrtc.PeerConnection) *Pee
 	peer.nack = make(chan *NackRequest, 48000)
 	peer.publishers = make(map[string]*Sender)
 	peer.subscribers = make(map[string]*Sender)
+	peer.buffer = make([]*rtp.Packet, rtpBufferSize)
 	peer.handle()
 	return peer
 }
@@ -76,6 +77,7 @@ func (p *Peer) Close() error {
 	logger.Printf("PeerClose(%s) now\n", p.id())
 	p.Lock()
 	p.track = nil
+	p.buffer = nil
 	p.cid = peerTrackClosedId
 	err := p.pc.Close()
 	p.Unlock()
@@ -156,7 +158,7 @@ func (peer *Peer) LoopLost() error {
 	defer ticker.Stop()
 
 	lost := make([]*rtp.Header, 0)
-	for track := peer.track; track != nil; {
+	for peer.track != nil {
 		select {
 		case p := <-peer.lost:
 			lost = append(lost, p)
@@ -194,7 +196,7 @@ func (peer *Peer) LoopLost() error {
 }
 
 func (peer *Peer) LoopRTCP(uid string, sender *Sender) error {
-	for {
+	for peer.track != nil {
 		pkts, err := sender.rtp.ReadRTCP()
 		if err != nil {
 			logger.Printf("LoopRTCP(%s,%s,%s) with %v\n", peer.id(), uid, sender.id, err)
@@ -212,10 +214,18 @@ func (peer *Peer) LoopRTCP(uid string, sender *Sender) error {
 			}
 		}
 	}
+	return nil
 }
 
 func (peer *Peer) handlePacket(dst *webrtc.Track, pkt *rtp.Packet) error {
-	old := peer.buffer[pkt.SequenceNumber]
+	peer.RLock()
+	buffer := peer.buffer
+	peer.RUnlock()
+	if buffer == nil {
+		return nil
+	}
+
+	old := buffer[pkt.SequenceNumber]
 	if old != nil && old.Timestamp >= pkt.Timestamp {
 		return nil
 	}
@@ -230,7 +240,7 @@ func (peer *Peer) handlePacket(dst *webrtc.Track, pkt *rtp.Packet) error {
 		peer.timestamp = pkt.Timestamp
 		peer.sequence = pkt.SequenceNumber
 	}
-	peer.buffer[pkt.SequenceNumber] = pkt
+	buffer[pkt.SequenceNumber] = pkt
 	return dst.WriteRTP(pkt)
 }
 
@@ -265,14 +275,15 @@ func (peer *Peer) handleLost(pkt *rtp.Packet) error {
 func (peer *Peer) handleNack(r *NackRequest) error {
 	peer.RLock()
 	sender := peer.subscribers[r.uid]
+	buffer := peer.buffer
 	peer.RUnlock()
 
-	if sender == nil || sender.id != r.cid {
+	if sender == nil || sender.id != r.cid || buffer == nil {
 		return nil
 	}
 
 	for _, seq := range r.pair.PacketList() {
-		pkt := peer.buffer[seq]
+		pkt := buffer[seq]
 		if pkt == nil {
 			continue
 		}
