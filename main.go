@@ -2,6 +2,8 @@ package main
 
 import (
 	"flag"
+	"net/http"
+	_ "net/http/pprof"
 	"os/user"
 	"path/filepath"
 	"strings"
@@ -22,6 +24,10 @@ func main() {
 	}
 
 	logger.SetLevel(logger.VERBOSE)
+
+	go func() {
+		http.ListenAndServe(":9000", http.DefaultServeMux)
+	}()
 
 	switch *sr {
 	case "engine":
