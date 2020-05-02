@@ -61,7 +61,7 @@ func (engine *Engine) BuildPeer(rid, uid string, pc *webrtc.PeerConnection) *Pee
 	peer.connected = make(chan bool, 1)
 	peer.lost = make(chan *rtp.Header, 17)
 	peer.queue = make(chan *rtp.Packet, 48000)
-	peer.nack = make(chan *NackRequest, 48000)
+	peer.nack = make(chan *NackRequest)
 	peer.publishers = make(map[string]*Sender)
 	peer.subscribers = make(map[string]*Sender)
 	peer.buffer = make([]*rtp.Packet, rtpBufferSize)
@@ -128,6 +128,8 @@ func (peer *Peer) handle() {
 
 func (peer *Peer) copyTrack(src, dst *webrtc.Track) error {
 	go func() error {
+		defer close(peer.queue)
+
 		for {
 			pkt, err := src.ReadRTP()
 			if err == io.EOF {
@@ -140,12 +142,20 @@ func (peer *Peer) copyTrack(src, dst *webrtc.Track) error {
 		}
 	}()
 
+	defer close(peer.lost)
+
 	for {
 		timer := time.NewTimer(peerTrackReadTimeout)
 		select {
-		case r := <-peer.nack:
+		case r, ok := <-peer.nack:
+			if !ok {
+				return fmt.Errorf("peer nack closed")
+			}
 			peer.handleNack(r)
-		case pkt := <-peer.queue:
+		case pkt, ok := <-peer.queue:
+			if !ok {
+				return fmt.Errorf("peer queue closed")
+			}
 			peer.handlePacket(dst, pkt)
 		case <-timer.C:
 			return fmt.Errorf("peer track read timeout")
@@ -160,7 +170,10 @@ func (peer *Peer) LoopLost() error {
 	lost := make([]*rtp.Header, 0)
 	for peer.track != nil {
 		select {
-		case p := <-peer.lost:
+		case p, ok := <-peer.lost:
+			if !ok {
+				return fmt.Errorf("peer lost closed")
+			}
 			lost = append(lost, p)
 		case <-ticker.C:
 		}
@@ -196,6 +209,17 @@ func (peer *Peer) LoopLost() error {
 }
 
 func (peer *Peer) LoopRTCP(uid string, sender *Sender) error {
+	queueNack := func(r *NackRequest) error {
+		timer := time.NewTimer(3 * time.Second)
+		defer timer.Stop()
+		select {
+		case peer.nack <- r:
+		case <-timer.C:
+			return fmt.Errorf("peer nack queue timeout")
+		}
+		return nil
+	}
+
 	for peer.track != nil {
 		pkts, err := sender.rtp.ReadRTCP()
 		if err != nil {
@@ -208,7 +232,12 @@ func (peer *Peer) LoopRTCP(uid string, sender *Sender) error {
 				nack := pkt.(*rtcp.TransportLayerNack)
 				for _, pair := range nack.Nacks {
 					logger.Verbosef("LoopRTCP(%s,%s,%s) TransportLayerNack %v\n", peer.id(), uid, sender.id, pair.PacketList())
-					peer.nack <- &NackRequest{uid: uid, cid: sender.id, pair: &pair}
+					r := &NackRequest{uid: uid, cid: sender.id, pair: &pair}
+					err := queueNack(r)
+					if err != nil {
+						logger.Printf("LoopRTCP(%s,%s,%s) with %v\n", peer.id(), uid, sender.id, err)
+						return err
+					}
 				}
 			default:
 			}
