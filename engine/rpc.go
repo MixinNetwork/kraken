@@ -69,6 +69,13 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 	renderer := NewRender(w, call.Id)
 	logger.Printf("RPC.handle(id: %s, method: %s, params: %v)\n", call.Id, call.Method, call.Params)
 	switch call.Method {
+	case "info":
+		info, err := impl.info(call.Params)
+		if err != nil {
+			renderer.RenderError(err)
+		} else {
+			renderer.RenderData(info)
+		}
 	case "list":
 		peers, err := impl.list(call.Params)
 		if err != nil {
@@ -107,6 +114,13 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 	default:
 		renderer.RenderError(fmt.Errorf("invalid method %s", call.Method))
 	}
+}
+
+func (r *R) info(params []interface{}) (interface{}, error) {
+	if len(params) != 0 {
+		return nil, fmt.Errorf("invalid params count %d", len(params))
+	}
+	return r.router.info()
 }
 
 func (r *R) list(params []interface{}) ([]map[string]interface{}, error) {

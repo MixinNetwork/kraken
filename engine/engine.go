@@ -4,14 +4,23 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/MixinNetwork/mixin/logger"
 )
+
+type State struct {
+	ActivePeers int `json:"active_peers"`
+	ClosedPeers int `json:"closed_peers"`
+	ActiveRooms int `json:"active_rooms"`
+	ClosedRooms int `json:"closed_rooms"`
+}
 
 type Engine struct {
 	IP        string
 	Interface string
 
+	State State
 	rooms *rmap
 }
 
@@ -30,6 +39,37 @@ func BuildEngine(conf *Configuration) (*Engine, error) {
 }
 
 func (engine *Engine) Loop() {
+	for {
+		engine.rooms.Lock()
+
+		engine.State.ActiveRooms = 0
+		engine.State.ClosedRooms = 0
+		engine.State.ActivePeers = 0
+		engine.State.ClosedPeers = 0
+
+		for _, pm := range engine.rooms.m {
+			pm.RLock()
+			ap, cp := 0, 0
+			for _, p := range pm.m {
+				if p.cid == peerTrackClosedId {
+					cp += 1
+				} else {
+					ap += 1
+				}
+			}
+			engine.State.ActivePeers += ap
+			engine.State.ClosedPeers += cp
+			if ap > 0 {
+				engine.State.ActiveRooms += 1
+			} else {
+				engine.State.ClosedRooms += 1
+			}
+			pm.RUnlock()
+		}
+
+		engine.rooms.Unlock()
+		time.Sleep(60 * time.Second)
+	}
 }
 
 func getIPFromInterface(in string) (string, error) {
@@ -58,7 +98,7 @@ func getIPFromInterface(in string) (string, error) {
 }
 
 type pmap struct {
-	sync.Mutex
+	sync.RWMutex
 	id string
 	m  map[string]*Peer
 }
@@ -71,7 +111,7 @@ func pmapAllocate(id string) *pmap {
 }
 
 type rmap struct {
-	sync.Mutex
+	sync.RWMutex
 	m map[string]*pmap
 }
 

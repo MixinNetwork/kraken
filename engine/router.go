@@ -21,6 +21,14 @@ func NewRouter(engine *Engine) *Router {
 	return &Router{engine: engine}
 }
 
+func (r *Router) info() (interface{}, error) {
+	rm := r.engine.rooms
+	rm.RLock()
+	defer rm.RUnlock()
+
+	return r.engine.State, nil
+}
+
 func (r *Router) list(rid string) ([]map[string]interface{}, error) {
 	room := r.engine.GetRoom(rid)
 	room.Lock()
