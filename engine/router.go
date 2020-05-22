@@ -31,8 +31,8 @@ func (r *Router) info() (interface{}, error) {
 
 func (r *Router) list(rid string) ([]map[string]interface{}, error) {
 	room := r.engine.GetRoom(rid)
-	room.Lock()
-	defer room.Unlock()
+	room.RLock()
+	defer room.RUnlock()
 	peers := make([]map[string]interface{}, 0)
 	for _, p := range room.m {
 		cid := uuid.FromStringOrNil(p.cid)
@@ -47,7 +47,7 @@ func (r *Router) list(rid string) ([]map[string]interface{}, error) {
 	return peers, nil
 }
 
-func (r *Router) publish(rid, uid string, ss string) (string, *webrtc.SessionDescription, error) {
+func (r *Router) publish(rid, uid string, ss string, limit int) (string, *webrtc.SessionDescription, error) {
 	if err := validateId(rid); err != nil {
 		return "", nil, fmt.Errorf("invalid rid format %s %s", rid, err.Error())
 	}
@@ -72,6 +72,19 @@ func (r *Router) publish(rid, uid string, ss string) (string, *webrtc.SessionDes
 	room := r.engine.GetRoom(rid)
 	room.Lock()
 	defer room.Unlock()
+
+	if limit > 0 {
+		for i, p := range room.m {
+			cid := uuid.FromStringOrNil(p.cid)
+			if cid.String() == uuid.Nil.String() || uid == i {
+				continue
+			}
+			limit--
+		}
+		if limit <= 0 {
+			return "", nil, fmt.Errorf("room full %d", limit)
+		}
+	}
 
 	se := webrtc.SettingEngine{}
 	se.SetLite(true)

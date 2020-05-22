@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/MixinNetwork/mixin/logger"
@@ -88,7 +89,7 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 		if err != nil {
 			renderer.RenderError(err)
 		} else {
-			renderer.RenderData(map[string]interface{}{"track": cid, "sdp": answer})
+			renderer.RenderData(map[string]interface{}{"track": cid, "sdp": answer, "jsep": answer})
 		}
 	case "trickle":
 		err := impl.trickle(call.Params)
@@ -102,7 +103,7 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 		if err != nil {
 			renderer.RenderError(err)
 		} else {
-			renderer.RenderData(offer)
+			renderer.RenderData(map[string]interface{}{"type": offer.Type, "sdp": offer.SDP, "jsep": offer})
 		}
 	case "answer":
 		err := impl.answer(call.Params)
@@ -135,22 +136,30 @@ func (r *R) list(params []interface{}) ([]map[string]interface{}, error) {
 }
 
 func (r *R) publish(params []interface{}) (string, *webrtc.SessionDescription, error) {
-	if len(params) != 3 {
+	if len(params) < 3 {
 		return "", nil, fmt.Errorf("invalid params count %d", len(params))
 	}
 	rid, ok := params[0].(string)
 	if !ok {
-		return "", nil, fmt.Errorf("invalid rid type %s", params[0])
+		return "", nil, fmt.Errorf("invalid rid type %v", params[0])
 	}
 	uid, ok := params[1].(string)
 	if !ok {
-		return "", nil, fmt.Errorf("invalid uid type %s", params[1])
+		return "", nil, fmt.Errorf("invalid uid type %v", params[1])
 	}
 	sdp, ok := params[2].(string)
 	if !ok {
-		return "", nil, fmt.Errorf("invalid sdp type %s", params[2])
+		return "", nil, fmt.Errorf("invalid sdp type %v", params[2])
 	}
-	return r.router.publish(rid, uid, sdp)
+	var limit int
+	if len(params) == 4 {
+		i, err := strconv.ParseInt(fmt.Sprint(params[3]), 10, 64)
+		if err != nil {
+			return "", nil, fmt.Errorf("invalid limit type %v %v", params[3], err)
+		}
+		limit = int(i)
+	}
+	return r.router.publish(rid, uid, sdp, limit)
 }
 
 func (r *R) trickle(params []interface{}) error {
