@@ -119,43 +119,43 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 
 func (r *R) info(params []interface{}) (interface{}, error) {
 	if len(params) != 0 {
-		return nil, fmt.Errorf("invalid params count %d", len(params))
+		return nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid params count %d", len(params)))
 	}
 	return r.router.info()
 }
 
 func (r *R) list(params []interface{}) ([]map[string]interface{}, error) {
 	if len(params) != 1 {
-		return nil, fmt.Errorf("invalid params count %d", len(params))
+		return nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid params count %d", len(params)))
 	}
 	rid, ok := params[0].(string)
 	if !ok {
-		return nil, fmt.Errorf("invalid rid type %s", params[0])
+		return nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid rid type %s", params[0]))
 	}
 	return r.router.list(rid)
 }
 
 func (r *R) publish(params []interface{}) (string, *webrtc.SessionDescription, error) {
 	if len(params) < 3 {
-		return "", nil, fmt.Errorf("invalid params count %d", len(params))
+		return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid params count %d", len(params)))
 	}
 	rid, ok := params[0].(string)
 	if !ok {
-		return "", nil, fmt.Errorf("invalid rid type %v", params[0])
+		return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid rid type %v", params[0]))
 	}
 	uid, ok := params[1].(string)
 	if !ok {
-		return "", nil, fmt.Errorf("invalid uid type %v", params[1])
+		return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid uid type %v", params[1]))
 	}
 	sdp, ok := params[2].(string)
 	if !ok {
-		return "", nil, fmt.Errorf("invalid sdp type %v", params[2])
+		return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid sdp type %v", params[2]))
 	}
 	var limit int
 	if len(params) == 4 {
 		i, err := strconv.ParseInt(fmt.Sprint(params[3]), 10, 64)
 		if err != nil {
-			return "", nil, fmt.Errorf("invalid limit type %v %v", params[3], err)
+			return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid limit type %v %v", params[3], err))
 		}
 		limit = int(i)
 	}
@@ -164,41 +164,41 @@ func (r *R) publish(params []interface{}) (string, *webrtc.SessionDescription, e
 
 func (r *R) trickle(params []interface{}) error {
 	if len(params) != 4 {
-		return fmt.Errorf("invalid params count %d", len(params))
+		return buildError(ErrorInvalidParams, fmt.Errorf("invalid params count %d", len(params)))
 	}
 	ids, err := r.parseId(params)
 	if err != nil {
-		return err
+		return buildError(ErrorInvalidParams, err)
 	}
 	candi, ok := params[3].(string)
 	if !ok {
-		return fmt.Errorf("invalid candi type %s", params[3])
+		return buildError(ErrorInvalidParams, fmt.Errorf("invalid candi type %s", params[3]))
 	}
 	return r.router.trickle(ids[0], ids[1], ids[2], candi)
 }
 
 func (r *R) subscribe(params []interface{}) (*webrtc.SessionDescription, error) {
 	if len(params) != 3 {
-		return nil, fmt.Errorf("invalid params count %d", len(params))
+		return nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid params count %d", len(params)))
 	}
 	ids, err := r.parseId(params)
 	if err != nil {
-		return nil, err
+		return nil, buildError(ErrorInvalidParams, err)
 	}
 	return r.router.subscribe(ids[0], ids[1], ids[2])
 }
 
 func (r *R) answer(params []interface{}) error {
 	if len(params) != 4 {
-		return fmt.Errorf("invalid params count %d", len(params))
+		return buildError(ErrorInvalidParams, fmt.Errorf("invalid params count %d", len(params)))
 	}
 	ids, err := r.parseId(params)
 	if err != nil {
-		return err
+		return buildError(ErrorInvalidParams, err)
 	}
 	sdp, ok := params[3].(string)
 	if !ok {
-		return fmt.Errorf("invalid sdp type %s", params[3])
+		return buildError(ErrorInvalidParams, fmt.Errorf("invalid sdp type %s", params[3]))
 	}
 	return r.router.answer(ids[0], ids[1], ids[2], sdp)
 }

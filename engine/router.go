@@ -49,24 +49,24 @@ func (r *Router) list(rid string) ([]map[string]interface{}, error) {
 
 func (r *Router) publish(rid, uid string, ss string, limit int) (string, *webrtc.SessionDescription, error) {
 	if err := validateId(rid); err != nil {
-		return "", nil, fmt.Errorf("invalid rid format %s %s", rid, err.Error())
+		return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid rid format %s %s", rid, err.Error()))
 	}
 	if err := validateId(uid); err != nil {
-		return "", nil, fmt.Errorf("invalid uid format %s %s", uid, err.Error())
+		return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid uid format %s %s", uid, err.Error()))
 	}
 	var offer webrtc.SessionDescription
 	err := json.Unmarshal([]byte(ss), &offer)
 	if err != nil {
-		return "", nil, err
+		return "", nil, buildError(ErrorInvalidSDP, err)
 	}
 	if offer.Type != webrtc.SDPTypeOffer {
-		return "", nil, fmt.Errorf("invalid sdp type %s", offer.Type)
+		return "", nil, buildError(ErrorInvalidSDP, fmt.Errorf("invalid sdp type %s", offer.Type))
 	}
 
 	parser := sdp.SessionDescription{}
 	err = parser.Unmarshal([]byte(offer.SDP))
 	if err != nil {
-		return "", nil, err
+		return "", nil, buildError(ErrorInvalidSDP, err)
 	}
 
 	room := r.engine.GetRoom(rid)
@@ -82,7 +82,7 @@ func (r *Router) publish(rid, uid string, ss string, limit int) (string, *webrtc
 			limit--
 		}
 		if limit <= 0 {
-			return "", nil, fmt.Errorf("room full %d", limit)
+			return "", nil, buildError(ErrorRoomFull, fmt.Errorf("room full %d", limit))
 		}
 	}
 
@@ -147,8 +147,11 @@ func (r *Router) publish(rid, uid string, ss string, limit int) (string, *webrtc
 func (r *Router) trickle(rid, uid, cid string, candi string) error {
 	var ici webrtc.ICECandidateInit
 	err := json.Unmarshal([]byte(candi), &ici)
-	if err != nil || ici.Candidate == "" {
-		return err
+	if err != nil {
+		return buildError(ErrorInvalidCandidate, err)
+	}
+	if ici.Candidate == "" {
+		return nil
 	}
 
 	room := r.engine.GetRoom(rid)
@@ -225,16 +228,16 @@ func (r *Router) answer(rid, uid, cid string, ss string) error {
 	var answer webrtc.SessionDescription
 	err := json.Unmarshal([]byte(ss), &answer)
 	if err != nil {
-		return err
+		return buildError(ErrorInvalidSDP, err)
 	}
 	if answer.Type != webrtc.SDPTypeAnswer {
-		return fmt.Errorf("invalid sdp type %s", answer.Type)
+		return buildError(ErrorInvalidSDP, fmt.Errorf("invalid sdp type %s", answer.Type))
 	}
 
 	parser := sdp.SessionDescription{}
 	err = parser.Unmarshal([]byte(answer.SDP))
 	if err != nil {
-		return err
+		return buildError(ErrorInvalidSDP, err)
 	}
 
 	room := r.engine.GetRoom(rid)
