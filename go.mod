@@ -11,10 +11,10 @@ require (
 	github.com/dimfeld/httptreemux v5.0.1+incompatible
 	github.com/gofrs/uuid v3.3.0+incompatible
 	github.com/gorilla/handlers v1.4.2
-	github.com/pelletier/go-toml v1.7.0
-	github.com/pion/rtcp v1.2.1
+	github.com/pelletier/go-toml v1.8.0
+	github.com/pion/rtcp v1.2.3
 	github.com/pion/rtp v1.5.4
 	github.com/pion/sdp/v2 v2.3.7
-	github.com/pion/webrtc/v2 v2.2.9
+	github.com/pion/webrtc/v2 v2.0.0-00010101000000-000000000000
 	github.com/unrolled/render v1.0.3
 )

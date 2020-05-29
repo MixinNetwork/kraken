@@ -89,7 +89,8 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 		if err != nil {
 			renderer.RenderError(err)
 		} else {
-			renderer.RenderData(map[string]interface{}{"track": cid, "sdp": answer, "jsep": answer})
+			jsep, _ := json.Marshal(answer)
+			renderer.RenderData(map[string]interface{}{"track": cid, "sdp": answer, "jsep": string(jsep)})
 		}
 	case "trickle":
 		err := impl.trickle(call.Params)
@@ -103,7 +104,8 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 		if err != nil {
 			renderer.RenderError(err)
 		} else {
-			renderer.RenderData(map[string]interface{}{"type": offer.Type, "sdp": offer.SDP, "jsep": offer})
+			jsep, _ := json.Marshal(offer)
+			renderer.RenderData(map[string]interface{}{"type": offer.Type, "sdp": offer.SDP, "jsep": string(jsep)})
 		}
 	case "answer":
 		err := impl.answer(call.Params)

@@ -47,7 +47,7 @@ func (r *Router) list(rid string) ([]map[string]interface{}, error) {
 	return peers, nil
 }
 
-func (r *Router) publish(rid, uid string, ss string, limit int) (string, *webrtc.SessionDescription, error) {
+func (r *Router) publish(rid, uid string, jsep string, limit int) (string, *webrtc.SessionDescription, error) {
 	if err := validateId(rid); err != nil {
 		return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid rid format %s %s", rid, err.Error()))
 	}
@@ -55,7 +55,7 @@ func (r *Router) publish(rid, uid string, ss string, limit int) (string, *webrtc
 		return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid uid format %s %s", uid, err.Error()))
 	}
 	var offer webrtc.SessionDescription
-	err := json.Unmarshal([]byte(ss), &offer)
+	err := json.Unmarshal([]byte(jsep), &offer)
 	if err != nil {
 		return "", nil, buildError(ErrorInvalidSDP, err)
 	}
@@ -224,9 +224,9 @@ func (r *Router) subscribe(rid, uid, cid string) (*webrtc.SessionDescription, er
 	return &offer, err
 }
 
-func (r *Router) answer(rid, uid, cid string, ss string) error {
+func (r *Router) answer(rid, uid, cid string, jsep string) error {
 	var answer webrtc.SessionDescription
-	err := json.Unmarshal([]byte(ss), &answer)
+	err := json.Unmarshal([]byte(jsep), &answer)
 	if err != nil {
 		return buildError(ErrorInvalidSDP, err)
 	}
