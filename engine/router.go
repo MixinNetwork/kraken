@@ -105,36 +105,36 @@ func (r *Router) publish(rid, uid string, jsep string, limit int) (string, *webr
 	}
 	pc, err := api.NewPeerConnection(pcConfig)
 	if err != nil {
-		return "", nil, err
+		return "", nil, buildError(ErrorServerNewPeerConnection, err)
 	}
 
 	peer := r.engine.BuildPeer(rid, uid, pc)
 	track, err := pc.NewTrack(webrtc.DefaultPayloadTypeOpus, rand.Uint32(), peer.cid, peer.uid)
 	if err != nil {
-		return "", nil, err
+		return "", nil, buildError(ErrorServerNewTrack, err)
 	}
 	_, err = pc.AddTransceiverFromTrack(track, webrtc.RtpTransceiverInit{
 		Direction: webrtc.RTPTransceiverDirectionSendrecv,
 	})
 	if err != nil {
-		return "", nil, err
+		return "", nil, buildError(ErrorServerAddTransceiver, err)
 	}
 
 	err = pc.SetRemoteDescription(offer)
 	if err != nil {
 		pc.Close()
-		return "", nil, err
+		return "", nil, buildError(ErrorServerSetRemoteOffer, err)
 	}
 	answer, err := pc.CreateAnswer(nil)
 	if err != nil {
 		pc.Close()
-		return "", nil, err
+		return "", nil, buildError(ErrorServerCreateAnswer, err)
 	}
 
 	err = pc.SetLocalDescription(answer)
 	if err != nil {
 		pc.Close()
-		return "", nil, err
+		return "", nil, buildError(ErrorServerSetLocalAnswer, err)
 	}
 	old := room.m[peer.uid]
 	if old != nil {
@@ -218,10 +218,13 @@ func (r *Router) subscribe(rid, uid, cid string) (*webrtc.SessionDescription, er
 
 	offer, err := peer.pc.CreateOffer(nil)
 	if err != nil {
-		return nil, err
+		return nil, buildError(ErrorServerCreateOffer, err)
 	}
 	err = peer.pc.SetLocalDescription(offer)
-	return &offer, err
+	if err != nil {
+		return nil, buildError(ErrorServerSetLocalOffer, err)
+	}
+	return &offer, nil
 }
 
 func (r *Router) answer(rid, uid, cid string, jsep string) error {
@@ -258,10 +261,10 @@ func (r *Router) answer(rid, uid, cid string, jsep string) error {
 	}()
 	select {
 	case err := <-renegotiated:
-		return err
+		return buildError(ErrorServerSetRemoteAnswer, err)
 	case <-time.After(peerTrackConnectionTimeout):
-		logger.Printf("answer(%s,%s,%s) timeout\n", rid, uid, cid)
-		return fmt.Errorf("timeout")
+		err := fmt.Errorf("answer(%s,%s,%s) timeout", rid, uid, cid)
+		return buildError(ErrorServerTimeout, err)
 	}
 }
 
