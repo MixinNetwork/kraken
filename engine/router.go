@@ -261,11 +261,15 @@ func (r *Router) answer(rid, uid, cid string, jsep string) error {
 	}()
 	select {
 	case err := <-renegotiated:
-		return buildError(ErrorServerSetRemoteAnswer, err)
+		if err != nil {
+			return buildError(ErrorServerSetRemoteAnswer, err)
+		}
 	case <-time.After(peerTrackConnectionTimeout):
 		err := fmt.Errorf("answer(%s,%s,%s) timeout", rid, uid, cid)
 		return buildError(ErrorServerTimeout, err)
 	}
+
+	return nil
 }
 
 func validateId(id string) error {
