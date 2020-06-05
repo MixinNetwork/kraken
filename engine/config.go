@@ -13,6 +13,10 @@ type Configuration struct {
 		MaxPeerCount int    `toml:"max-peer-count"`
 		LogLevel     int    `toml:"log-level"`
 	} `toml:"engine"`
+	Turn struct {
+		Host   string `toml:"host"`
+		Secret string `toml:"secret"`
+	} `toml:"turn"`
 	RPC struct {
 		Port int `toml:"port"`
 	} `toml:"rpc"`

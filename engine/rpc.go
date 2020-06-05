@@ -16,6 +16,7 @@ import (
 
 type R struct {
 	router *Router
+	conf   *Configuration
 }
 
 type Call struct {
@@ -70,6 +71,13 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 	renderer := NewRender(w, call.Id)
 	logger.Printf("RPC.handle(id: %s, method: %s, params: %v)\n", call.Id, call.Method, call.Params)
 	switch call.Method {
+	case "turn":
+		servers, err := impl.turn(call.Params)
+		if err != nil {
+			renderer.RenderError(err)
+		} else {
+			renderer.RenderData(servers)
+		}
 	case "info":
 		info, err := impl.info(call.Params)
 		if err != nil {
@@ -117,6 +125,17 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 	default:
 		renderer.RenderError(fmt.Errorf("invalid method %s", call.Method))
 	}
+}
+
+func (r *R) turn(params []interface{}) (interface{}, error) {
+	if len(params) != 1 {
+		return nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid params count %d", len(params)))
+	}
+	uid, ok := params[0].(string)
+	if !ok {
+		return nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid uid type %s", params[0]))
+	}
+	return turn(r.conf, uid)
 }
 
 func (r *R) info(params []interface{}) (interface{}, error) {
@@ -255,7 +274,7 @@ func handleCORS(handler http.Handler) http.Handler {
 
 func ServeRPC(engine *Engine, conf *Configuration) error {
 	logger.Printf("ServeRPC(:%d)\n", conf.RPC.Port)
-	impl := &R{router: NewRouter(engine)}
+	impl := &R{router: NewRouter(engine), conf: conf}
 	router := httptreemux.New()
 	router.POST("/", impl.handle)
 	registerHandlers(router)
