@@ -160,6 +160,7 @@ func (peer *Peer) callbackOnTrack() error {
 	if err != nil {
 		return err
 	}
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := clbkClient.Do(req)
 	if err != nil {
 		return err
