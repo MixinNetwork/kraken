@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/MixinNetwork/mixin/logger"
@@ -173,14 +174,23 @@ func (r *R) publish(params []interface{}) (string, *webrtc.SessionDescription, e
 		return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid sdp type %v", params[2]))
 	}
 	var limit int
-	if len(params) == 4 {
+	var callback string
+	if len(params) == 5 {
 		i, err := strconv.ParseInt(fmt.Sprint(params[3]), 10, 64)
 		if err != nil {
 			return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid limit type %v %v", params[3], err))
 		}
 		limit = int(i)
+		cbk, ok := params[4].(string)
+		if !ok {
+			return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid callback type %v", params[4]))
+		}
+		if !strings.HasPrefix(cbk, "https://") {
+			return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid callback value %s", cbk))
+		}
+		callback = cbk
 	}
-	return r.router.publish(rid, uid, sdp, limit)
+	return r.router.publish(rid, uid, sdp, limit, callback)
 }
 
 func (r *R) trickle(params []interface{}) error {

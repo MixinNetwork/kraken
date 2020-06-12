@@ -1,8 +1,11 @@
 package engine
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"sync"
 	"time"
 
@@ -23,6 +26,14 @@ const (
 	rtpPacketExpiration        = rtpClockRate / 2
 )
 
+var clbkClient *http.Client
+
+func init() {
+	clbkClient = &http.Client{
+		Timeout: 5 * time.Second,
+	}
+}
+
 type Sender struct {
 	id  string
 	rtp *webrtc.RTPSender
@@ -39,6 +50,7 @@ type Peer struct {
 	rid         string
 	uid         string
 	cid         string
+	callback    string
 	pc          *webrtc.PeerConnection
 	track       *webrtc.Track
 	publishers  map[string]*Sender
@@ -52,12 +64,13 @@ type Peer struct {
 	connected   chan bool
 }
 
-func (engine *Engine) BuildPeer(rid, uid string, pc *webrtc.PeerConnection) *Peer {
+func (engine *Engine) BuildPeer(rid, uid string, pc *webrtc.PeerConnection, callback string) *Peer {
 	cid, err := uuid.NewV4()
 	if err != nil {
 		panic(err)
 	}
 	peer := &Peer{rid: rid, uid: uid, cid: cid.String(), pc: pc}
+	peer.callback = callback
 	peer.connected = make(chan bool, 1)
 	peer.lost = make(chan *rtp.Header, 17)
 	peer.queue = make(chan *rtp.Packet, 48000)
@@ -119,11 +132,44 @@ func (peer *Peer) handle() {
 		peer.track = lt
 		peer.Unlock()
 
+		err = peer.callbackOnTrack()
+		if err != nil {
+			logger.Printf("OnTrack(%s, %d, %d) callback error %s\n", peer.id(), rt.PayloadType(), rt.SSRC(), err.Error())
+			return
+		}
+
 		go peer.LoopLost()
 		err = peer.copyTrack(rt, lt)
 		logger.Printf("HandlePeer(%s) OnTrack(%d, %d) end with %s\n", peer.id(), rt.PayloadType(), rt.SSRC(), err.Error())
 		peer.Close()
 	})
+}
+
+func (peer *Peer) callbackOnTrack() error {
+	if peer.callback == "" {
+		return nil
+	}
+
+	body, _ := json.Marshal(map[string]string{
+		"rid":    peer.rid,
+		"uid":    peer.uid,
+		"cid":    peer.cid,
+		"action": "ontrack",
+	})
+	req, err := http.NewRequest("POST", peer.callback, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	resp, err := clbkClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("status: %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func (peer *Peer) copyTrack(src, dst *webrtc.Track) error {

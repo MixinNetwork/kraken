@@ -47,7 +47,7 @@ func (r *Router) list(rid string) ([]map[string]interface{}, error) {
 	return peers, nil
 }
 
-func (r *Router) publish(rid, uid string, jsep string, limit int) (string, *webrtc.SessionDescription, error) {
+func (r *Router) publish(rid, uid string, jsep string, limit int, callback string) (string, *webrtc.SessionDescription, error) {
 	if err := validateId(rid); err != nil {
 		return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid rid format %s %s", rid, err.Error()))
 	}
@@ -108,7 +108,7 @@ func (r *Router) publish(rid, uid string, jsep string, limit int) (string, *webr
 		return "", nil, buildError(ErrorServerNewPeerConnection, err)
 	}
 
-	peer := r.engine.BuildPeer(rid, uid, pc)
+	peer := r.engine.BuildPeer(rid, uid, pc, callback)
 	track, err := pc.NewTrack(webrtc.DefaultPayloadTypeOpus, rand.Uint32(), peer.cid, peer.uid)
 	if err != nil {
 		return "", nil, buildError(ErrorServerNewTrack, err)
