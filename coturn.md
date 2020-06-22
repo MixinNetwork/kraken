@@ -9,7 +9,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/opt/coturn/bin/turnserver -a -f --no-stun --listening-port 443 --tls-listening-port 1443 --realm kraken --user webrtc:turnpassword -v
+ExecStart=/opt/coturn/bin/turnserver -a -f --no-stun --listening-port 443 --tls-listening-port 1443 --syslog --realm kraken --user webrtc:turnpassword -v
 Restart=on-failure
 LimitNOFILE=65536
 
