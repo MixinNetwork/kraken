@@ -64,7 +64,7 @@ type Peer struct {
 	connected   chan bool
 }
 
-func (engine *Engine) BuildPeer(rid, uid string, pc *webrtc.PeerConnection, callback string) *Peer {
+func BuildPeer(rid, uid string, pc *webrtc.PeerConnection, callback string) *Peer {
 	cid, err := uuid.NewV4()
 	if err != nil {
 		panic(err)

@@ -108,7 +108,7 @@ func (r *Router) publish(rid, uid string, jsep string, limit int, callback strin
 		return "", nil, buildError(ErrorServerNewPeerConnection, err)
 	}
 
-	peer := r.engine.BuildPeer(rid, uid, pc, callback)
+	peer := BuildPeer(rid, uid, pc, callback)
 	track, err := pc.NewTrack(webrtc.DefaultPayloadTypeOpus, rand.Uint32(), peer.cid, peer.uid)
 	if err != nil {
 		return "", nil, buildError(ErrorServerNewTrack, err)
@@ -196,7 +196,8 @@ func (r *Router) subscribe(rid, uid, cid string) (*webrtc.SessionDescription, er
 				delete(p.subscribers, peer.uid)
 				renegotiate = true
 			}
-		} else if p.track != nil && (old == nil || old.id != p.cid) {
+		}
+		if p.track != nil && (old == nil || old.id != p.cid) {
 			sender, err := peer.pc.AddTrack(p.track)
 			if err != nil {
 				logger.Printf("failed to add sender %s to peer %s with error %s\n", p.id(), peer.id(), err.Error())
