@@ -61,6 +61,7 @@ async function subscribe(pc) {
     await pc.setRemoteDescription(res.data);
     var sdp = await pc.createAnswer();
     await pc.setLocalDescription(sdp);
+    // RPC anwser the subscribe offer
     await rpc('answer', [roomId, userId, trackId, JSON.stringify(sdp)]);
   }
   setTimeout(function () {
@@ -96,3 +97,7 @@ ip address # get your network interface name, edit config/engine.toml
 ```
 
 Get the source code of Mornin(https://github.com/fox-one/mornin.fm) and configure it to use your local kraken API.
+
+## Community
+
+Kraken is built with [Pion](https://github.com/pion/webrtc), we have discussions over their Slack.
