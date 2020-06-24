@@ -333,7 +333,7 @@ func (peer *Peer) handleLost(pkt *rtp.Packet) error {
 		next = (uint32(peer.sequence) + uint32(gap-17)) % 65536
 		gap = 17
 	}
-	if next+uint32(gap) > 65536 {
+	if next+uint32(gap) > 65535 {
 		gap = uint16((next + uint32(gap)) % 65536)
 		next = 0
 	}
