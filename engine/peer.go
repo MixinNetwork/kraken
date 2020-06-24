@@ -191,8 +191,9 @@ func (peer *Peer) copyTrack(src, dst *webrtc.Track) error {
 
 	defer close(peer.lost)
 
+	timer := time.NewTimer(peerTrackReadTimeout)
+	defer timer.Stop()
 	for {
-		timer := time.NewTimer(peerTrackReadTimeout)
 		select {
 		case r, ok := <-peer.nack:
 			if !ok {
@@ -207,7 +208,11 @@ func (peer *Peer) copyTrack(src, dst *webrtc.Track) error {
 		case <-timer.C:
 			return fmt.Errorf("peer track read timeout")
 		}
-		timer.Stop()
+		// Reset the timer.
+		if !timer.Stop() {
+			<-timer.C
+		}
+		timer.Reset(peerTrackReadTimeout)
 	}
 }
 func (peer *Peer) LoopLost() error {
@@ -333,7 +338,7 @@ func (peer *Peer) handleLost(pkt *rtp.Packet) error {
 		next = (uint32(peer.sequence) + uint32(gap-17)) % 65536
 		gap = 17
 	}
-	if next+uint32(gap) > 65536 {
+	if next+uint32(gap) > 65535 {
 		gap = uint16((next + uint32(gap)) % 65536)
 		next = 0
 	}
