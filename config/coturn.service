@@ -1,0 +1,12 @@
+[Unit]
+Description=Coturn Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/opt/coturn/bin/turnserver -a -f --syslog --no-stun --listening-port 443 --static-auth-secret=812ecb0604d9b90c4aa43a0e3fd1ba85 -r kraken -v
+Restart=on-failure
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

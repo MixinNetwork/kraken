@@ -1,0 +1,12 @@
+[engine]
+# the network interface to bind
+interface = "eth0"
+log-level = 10
+
+[turn]
+host = "turn:turn.kraken.fm:443"
+# must be identical to coturn static auth secret
+secret = "812ecb0604d9b90c4aa43a0e3fd1ba85"
+
+[rpc]
+port = 7000

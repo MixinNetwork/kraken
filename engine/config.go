@@ -9,9 +9,8 @@ import (
 
 type Configuration struct {
 	Engine struct {
-		Interface    string `toml:"interface"`
-		MaxPeerCount int    `toml:"max-peer-count"`
-		LogLevel     int    `toml:"log-level"`
+		Interface string `toml:"interface"`
+		LogLevel  int    `toml:"log-level"`
 	} `toml:"engine"`
 	Turn struct {
 		Host   string `toml:"host"`
