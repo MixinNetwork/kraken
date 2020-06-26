@@ -6,6 +6,8 @@
 
 Kraken SFU only supports simple group audio conferencing, more features may be added easily.
 
+Both Unified Plan and RTCP-MUX supported, so that only one UDP port per participant despite the number of participants in a room.
+
 ### monitor [WIP]
 
 This is the daemon that load balance all engine instances according to their system load, and it will direct all peers in a room to the same engine instance.
