@@ -265,15 +265,16 @@ func (peer *Peer) LoopRTCP(uid string, sender *Sender) error {
 	defer timer.Stop()
 
 	queueNack := func(timer *time.Timer, r *NackRequest) error {
+		if !timer.Stop() {
+			<-timer.C
+		}
+		timer.Reset(3 * time.Second)
+
 		select {
 		case peer.nack <- r:
 		case <-timer.C:
 			return fmt.Errorf("peer nack queue timeout")
 		}
-		if !timer.Stop() {
-			<-timer.C
-		}
-		timer.Reset(3 * time.Second)
 		return nil
 	}
 
