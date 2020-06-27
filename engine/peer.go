@@ -193,6 +193,7 @@ func (peer *Peer) copyTrack(src, dst *webrtc.Track) error {
 
 	timer := time.NewTimer(peerTrackReadTimeout)
 	defer timer.Stop()
+
 	for {
 		select {
 		case r, ok := <-peer.nack:
@@ -208,7 +209,6 @@ func (peer *Peer) copyTrack(src, dst *webrtc.Track) error {
 		case <-timer.C:
 			return fmt.Errorf("peer track read timeout")
 		}
-		// Reset the timer.
 		if !timer.Stop() {
 			<-timer.C
 		}
@@ -261,14 +261,19 @@ func (peer *Peer) LoopLost() error {
 }
 
 func (peer *Peer) LoopRTCP(uid string, sender *Sender) error {
-	queueNack := func(r *NackRequest) error {
-		timer := time.NewTimer(3 * time.Second)
-		defer timer.Stop()
+	timer := time.NewTimer(3 * time.Second)
+	defer timer.Stop()
+
+	queueNack := func(timer *time.Timer, r *NackRequest) error {
 		select {
 		case peer.nack <- r:
 		case <-timer.C:
 			return fmt.Errorf("peer nack queue timeout")
 		}
+		if !timer.Stop() {
+			<-timer.C
+		}
+		timer.Reset(3 * time.Second)
 		return nil
 	}
 
@@ -285,7 +290,7 @@ func (peer *Peer) LoopRTCP(uid string, sender *Sender) error {
 				for _, pair := range nack.Nacks {
 					logger.Verbosef("LoopRTCP(%s,%s,%s) TransportLayerNack %v\n", peer.id(), uid, sender.id, pair.PacketList())
 					r := &NackRequest{uid: uid, cid: sender.id, pair: &pair}
-					err := queueNack(r)
+					err := queueNack(timer, r)
 					if err != nil {
 						logger.Printf("LoopRTCP(%s,%s,%s) with %v\n", peer.id(), uid, sender.id, err)
 						return err
