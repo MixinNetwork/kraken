@@ -100,9 +100,12 @@ func (p *Peer) Close() error {
 
 func (peer *Peer) handle() {
 	go func() {
+		timer := time.NewTimer(peerTrackConnectionTimeout)
+		defer timer.Stop()
+
 		select {
 		case <-peer.connected:
-		case <-time.After(peerTrackConnectionTimeout):
+		case <-timer.C:
 			logger.Printf("HandlePeer(%s) OnTrackTimeout()\n", peer.id())
 			peer.Close()
 		}
@@ -134,13 +137,12 @@ func (peer *Peer) handle() {
 
 		err = peer.callbackOnTrack()
 		if err != nil {
-			logger.Printf("OnTrack(%s, %d, %d) callback error %s\n", peer.id(), rt.PayloadType(), rt.SSRC(), err.Error())
-			return
+			logger.Printf("HandlePeer(%s) OnTrack(%d, %d) callback error %s\n", peer.id(), rt.PayloadType(), rt.SSRC(), err.Error())
+		} else {
+			go peer.LoopLost()
+			err = peer.copyTrack(rt, lt)
+			logger.Printf("HandlePeer(%s) OnTrack(%d, %d) end with %s\n", peer.id(), rt.PayloadType(), rt.SSRC(), err.Error())
 		}
-
-		go peer.LoopLost()
-		err = peer.copyTrack(rt, lt)
-		logger.Printf("HandlePeer(%s) OnTrack(%d, %d) end with %s\n", peer.id(), rt.PayloadType(), rt.SSRC(), err.Error())
 		peer.Close()
 	})
 }
