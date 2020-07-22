@@ -10,7 +10,7 @@ import (
 	"github.com/MixinNetwork/mixin/logger"
 	"github.com/gofrs/uuid"
 	"github.com/pion/sdp/v2"
-	"github.com/pion/webrtc/v2"
+	"github.com/pion/webrtc/v3"
 )
 
 type Router struct {
@@ -88,10 +88,9 @@ func (r *Router) publish(rid, uid string, jsep string, limit int, callback strin
 
 	se := webrtc.SettingEngine{}
 	se.SetLite(true)
-	se.SetTrickle(false)
 	se.SetInterfaceFilter(func(in string) bool { return in == r.engine.Interface })
 	se.SetNAT1To1IPs([]string{r.engine.IP}, webrtc.ICECandidateTypeHost)
-	se.SetConnectionTimeout(5*time.Second, 5*time.Second)
+	se.SetICETimeouts(10*time.Second, 30*time.Second, 2*time.Second)
 
 	codec := webrtc.NewRTPOpusCodec(webrtc.DefaultPayloadTypeOpus, 48000)
 	me := webrtc.MediaEngine{}
@@ -130,18 +129,66 @@ func (r *Router) publish(rid, uid string, jsep string, limit int, callback strin
 		pc.Close()
 		return "", nil, buildError(ErrorServerCreateAnswer, err)
 	}
-
+	gatherComplete := webrtc.GatheringCompletePromise(peer.pc)
 	err = pc.SetLocalDescription(answer)
 	if err != nil {
 		pc.Close()
 		return "", nil, buildError(ErrorServerSetLocalAnswer, err)
 	}
+	<-gatherComplete
 	old := room.m[peer.uid]
 	if old != nil {
 		old.Close()
 	}
 	room.m[peer.uid] = peer
-	return peer.cid, &answer, nil
+	return peer.cid, peer.pc.LocalDescription(), nil
+}
+
+func (r *Router) restart(rid, uid, cid string, jsep string) (*webrtc.SessionDescription, error) {
+	room := r.engine.GetRoom(rid)
+	room.Lock()
+	defer room.Unlock()
+
+	peer, err := room.get(uid, cid)
+	if err != nil {
+		return nil, err
+	}
+	peer.Lock()
+	defer peer.Unlock()
+
+	var offer webrtc.SessionDescription
+	err = json.Unmarshal([]byte(jsep), &offer)
+	if err != nil {
+		return nil, buildError(ErrorInvalidSDP, err)
+	}
+	if offer.Type != webrtc.SDPTypeOffer {
+		return nil, buildError(ErrorInvalidSDP, fmt.Errorf("invalid sdp type %s", offer.Type))
+	}
+
+	parser := sdp.SessionDescription{}
+	err = parser.Unmarshal([]byte(offer.SDP))
+	if err != nil {
+		return nil, buildError(ErrorInvalidSDP, err)
+	}
+
+	err = peer.pc.SetRemoteDescription(offer)
+	if err != nil {
+		peer.pc.Close()
+		return nil, buildError(ErrorServerSetRemoteOffer, err)
+	}
+	answer, err := peer.pc.CreateAnswer(nil)
+	if err != nil {
+		peer.pc.Close()
+		return nil, buildError(ErrorServerCreateAnswer, err)
+	}
+	gatherComplete := webrtc.GatheringCompletePromise(peer.pc)
+	err = peer.pc.SetLocalDescription(answer)
+	if err != nil {
+		peer.pc.Close()
+		return nil, buildError(ErrorServerSetLocalAnswer, err)
+	}
+	<-gatherComplete
+	return peer.pc.LocalDescription(), nil
 }
 
 func (r *Router) trickle(rid, uid, cid string, candi string) error {
@@ -221,11 +268,13 @@ func (r *Router) subscribe(rid, uid, cid string) (*webrtc.SessionDescription, er
 	if err != nil {
 		return nil, buildError(ErrorServerCreateOffer, err)
 	}
+	gatherComplete := webrtc.GatheringCompletePromise(peer.pc)
 	err = peer.pc.SetLocalDescription(offer)
 	if err != nil {
 		return nil, buildError(ErrorServerSetLocalOffer, err)
 	}
-	return &offer, nil
+	<-gatherComplete
+	return peer.pc.LocalDescription(), nil
 }
 
 func (r *Router) answer(rid, uid, cid string, jsep string) error {

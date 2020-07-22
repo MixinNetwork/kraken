@@ -9,8 +9,8 @@ require (
 	github.com/gorilla/handlers v1.4.2
 	github.com/pelletier/go-toml v1.8.0
 	github.com/pion/rtcp v1.2.3
-	github.com/pion/rtp v1.5.5
-	github.com/pion/sdp/v2 v2.3.8
-	github.com/pion/webrtc/v2 v2.2.17
+	github.com/pion/rtp v1.6.0
+	github.com/pion/sdp/v2 v2.4.0
+	github.com/pion/webrtc/v3 v3.0.0-20200721060053-ca3cc9d940bc
 	github.com/unrolled/render v1.0.3
 )
