@@ -101,6 +101,14 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 			jsep, _ := json.Marshal(answer)
 			renderer.RenderData(map[string]interface{}{"track": cid, "sdp": answer, "jsep": string(jsep)})
 		}
+	case "restart":
+		answer, err := impl.restart(call.Params)
+		if err != nil {
+			renderer.RenderError(err)
+		} else {
+			jsep, _ := json.Marshal(answer)
+			renderer.RenderData(map[string]interface{}{"jsep": string(jsep)})
+		}
 	case "trickle":
 		err := impl.trickle(call.Params)
 		if err != nil {
@@ -191,6 +199,21 @@ func (r *R) publish(params []interface{}) (string, *webrtc.SessionDescription, e
 		callback = cbk
 	}
 	return r.router.publish(rid, uid, sdp, limit, callback)
+}
+
+func (r *R) restart(params []interface{}) (*webrtc.SessionDescription, error) {
+	if len(params) != 4 {
+		return nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid params count %d", len(params)))
+	}
+	ids, err := r.parseId(params)
+	if err != nil {
+		return nil, buildError(ErrorInvalidParams, err)
+	}
+	jsep, ok := params[3].(string)
+	if !ok {
+		return nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid jsep type %s", params[3]))
+	}
+	return r.router.restart(ids[0], ids[1], ids[2], jsep)
 }
 
 func (r *R) trickle(params []interface{}) error {
