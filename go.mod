@@ -2,6 +2,8 @@ module github.com/MixinNetwork/kraken
 
 go 1.14
 
+replace github.com/pion/webrtc/v3 => github.com/MixinNetwork/webrtc/v3 v3.0.0-20200724043408-0bafa1170d88
+
 require (
 	github.com/MixinNetwork/mixin v0.8.4
 	github.com/dimfeld/httptreemux v5.0.1+incompatible
