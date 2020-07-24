@@ -191,6 +191,18 @@ func (r *Router) restart(rid, uid, cid string, jsep string) (*webrtc.SessionDesc
 	return peer.pc.LocalDescription(), nil
 }
 
+func (r *Router) end(rid, uid, cid string) error {
+	room := r.engine.GetRoom(rid)
+	room.Lock()
+	defer room.Unlock()
+
+	peer, err := room.get(uid, cid)
+	if err != nil {
+		return err
+	}
+	return peer.Close()
+}
+
 func (r *Router) trickle(rid, uid, cid string, candi string) error {
 	var ici webrtc.ICECandidateInit
 	err := json.Unmarshal([]byte(candi), &ici)
