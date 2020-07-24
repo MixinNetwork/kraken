@@ -19,7 +19,7 @@ import (
 const (
 	peerTrackClosedId          = "CLOSED"
 	peerTrackConnectionTimeout = 10 * time.Second
-	peerTrackReadTimeout       = 10 * time.Second
+	peerTrackReadTimeout       = 30 * time.Second
 	rtpBufferSize              = 65536
 	rtpClockRate               = 48000
 	rtpPacketSequenceMax       = ^uint16(0)
@@ -182,9 +182,11 @@ func (peer *Peer) copyTrack(src, dst *webrtc.Track) error {
 		for {
 			pkt, err := src.ReadRTP()
 			if err == io.EOF {
+				logger.Verbosef("copyTrack(%s) EOF\n", peer.id())
 				return nil
 			}
 			if err != nil {
+				logger.Verbosef("copyTrack(%s) error %s\n", peer.id(), err.Error())
 				return err
 			}
 			peer.queue <- pkt
