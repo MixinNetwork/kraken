@@ -89,11 +89,17 @@ func (p *Peer) id() string {
 func (p *Peer) Close() error {
 	logger.Printf("PeerClose(%s) now\n", p.id())
 	p.Lock()
+	defer p.Unlock()
+
+	if p.cid == peerTrackClosedId {
+		logger.Printf("PeerClose(%s) already\n", p.id())
+		return nil
+	}
+
 	p.track = nil
 	p.buffer = nil
 	p.cid = peerTrackClosedId
 	err := p.pc.Close()
-	p.Unlock()
 	logger.Printf("PeerClose(%s) with %v\n", p.id(), err)
 	return err
 }
