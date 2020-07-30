@@ -304,33 +304,33 @@ func (r *Router) subscribe(rid, uid, cid string) (*webrtc.SessionDescription, er
 	timer := time.NewTimer(peerTrackConnectionTimeout)
 	defer timer.Stop()
 
-	renegotiated := make(chan error)
+	ec := make(chan error)
+	gc := make(chan struct{})
 	go func() {
 		offer, err := peer.pc.CreateOffer(nil)
 		if err != nil {
-			renegotiated <- buildError(ErrorServerCreateOffer, err)
+			ec <- buildError(ErrorServerCreateOffer, err)
 			return
 		}
 		gatherComplete := webrtc.GatheringCompletePromise(peer.pc)
 		err = peer.pc.SetLocalDescription(offer)
 		if err != nil {
-			renegotiated <- buildError(ErrorServerSetLocalOffer, err)
+			ec <- buildError(ErrorServerSetLocalOffer, err)
 			return
 		}
-		<-gatherComplete
-		renegotiated <- nil
+		c := <-gatherComplete
+		gc <- c
 	}()
 
 	select {
-	case err := <-renegotiated:
-		if err != nil {
-			return nil, err
-		}
+	case err := <-ec:
+		return nil, err
+	case <-gc:
+		return peer.pc.LocalDescription(), nil
 	case <-timer.C:
 		err := fmt.Errorf("subscribe(%s,%s,%s) timeout", rid, uid, cid)
 		return nil, buildError(ErrorServerTimeout, err)
 	}
-	return peer.pc.LocalDescription(), nil
 }
 
 func (r *Router) answer(rid, uid, cid string, jsep string) error {
