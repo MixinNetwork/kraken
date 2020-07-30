@@ -10,10 +10,11 @@ import (
 )
 
 type State struct {
-	ActivePeers int `json:"active_peers"`
-	ClosedPeers int `json:"closed_peers"`
-	ActiveRooms int `json:"active_rooms"`
-	ClosedRooms int `json:"closed_rooms"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	ActivePeers int       `json:"active_peers"`
+	ClosedPeers int       `json:"closed_peers"`
+	ActiveRooms int       `json:"active_rooms"`
+	ClosedRooms int       `json:"closed_rooms"`
 }
 
 type Engine struct {
@@ -40,8 +41,9 @@ func BuildEngine(conf *Configuration) (*Engine, error) {
 
 func (engine *Engine) Loop() {
 	for {
-		engine.rooms.Lock()
+		engine.rooms.RLock()
 
+		engine.State.UpdatedAt = time.Now()
 		engine.State.ActiveRooms = 0
 		engine.State.ClosedRooms = 0
 		engine.State.ActivePeers = 0
@@ -67,7 +69,7 @@ func (engine *Engine) Loop() {
 			pm.RUnlock()
 		}
 
-		engine.rooms.Unlock()
+		engine.rooms.RUnlock()
 		time.Sleep(60 * time.Second)
 	}
 }
@@ -121,7 +123,20 @@ func rmapAllocate() *rmap {
 	return rm
 }
 
+func (engine *Engine) getRoom(rid string) *pmap {
+	rm := engine.rooms
+	rm.RLock()
+	defer rm.RUnlock()
+
+	return rm.m[rid]
+}
+
 func (engine *Engine) GetRoom(rid string) *pmap {
+	pm := engine.getRoom(rid)
+	if pm != nil {
+		return pm
+	}
+
 	rm := engine.rooms
 	rm.Lock()
 	defer rm.Unlock()
