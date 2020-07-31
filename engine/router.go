@@ -260,46 +260,6 @@ func (r *Router) subscribe(rid, uid, cid string) (*webrtc.SessionDescription, er
 	if err != nil {
 		return nil, err
 	}
-	peer.Lock()
-	defer peer.Unlock()
-
-	var renegotiate bool
-	for _, p := range room.m {
-		if p.uid == peer.uid {
-			continue
-		}
-		p.Lock()
-		old := peer.publishers[p.uid]
-
-		if old != nil && (p.track == nil || old.id != p.cid) {
-			err := peer.pc.RemoveTrack(old.rtp)
-			if err != nil {
-				logger.Printf("failed to remove sender %s from peer %s with error %s\n", p.id(), peer.id(), err.Error())
-			} else {
-				delete(peer.publishers, p.uid)
-				delete(p.subscribers, peer.uid)
-				renegotiate = true
-			}
-		}
-		if p.track != nil && (old == nil || old.id != p.cid) {
-			sender, err := peer.pc.AddTrack(p.track)
-			if err != nil {
-				logger.Printf("failed to add sender %s to peer %s with error %s\n", p.id(), peer.id(), err.Error())
-			} else if id := sender.Track().ID(); id != p.cid {
-				panic(fmt.Errorf("malformed peer and track id %s %s", p.cid, id))
-			} else {
-				peer.publishers[p.uid] = &Sender{id: p.cid, rtp: sender}
-				p.subscribers[peer.uid] = &Sender{id: peer.cid, rtp: sender}
-				go p.LoopRTCP(peer.uid, p.subscribers[peer.uid])
-				renegotiate = true
-			}
-		}
-
-		p.Unlock()
-	}
-	if !renegotiate {
-		return &webrtc.SessionDescription{}, nil
-	}
 
 	timer := time.NewTimer(peerTrackConnectionTimeout)
 	defer timer.Stop()
@@ -307,6 +267,48 @@ func (r *Router) subscribe(rid, uid, cid string) (*webrtc.SessionDescription, er
 	ec := make(chan error)
 	gc := make(chan struct{})
 	go func() {
+		peer.Lock()
+		defer peer.Unlock()
+
+		var renegotiate bool
+		for _, p := range room.m {
+			if p.uid == peer.uid {
+				continue
+			}
+			p.Lock()
+			old := peer.publishers[p.uid]
+
+			if old != nil && (p.track == nil || old.id != p.cid) {
+				err := peer.pc.RemoveTrack(old.rtp)
+				if err != nil {
+					logger.Printf("failed to remove sender %s from peer %s with error %s\n", p.id(), peer.id(), err.Error())
+				} else {
+					delete(peer.publishers, p.uid)
+					delete(p.subscribers, peer.uid)
+					renegotiate = true
+				}
+			}
+			if p.track != nil && (old == nil || old.id != p.cid) {
+				sender, err := peer.pc.AddTrack(p.track)
+				if err != nil {
+					logger.Printf("failed to add sender %s to peer %s with error %s\n", p.id(), peer.id(), err.Error())
+				} else if id := sender.Track().ID(); id != p.cid {
+					panic(fmt.Errorf("malformed peer and track id %s %s", p.cid, id))
+				} else {
+					peer.publishers[p.uid] = &Sender{id: p.cid, rtp: sender}
+					p.subscribers[peer.uid] = &Sender{id: peer.cid, rtp: sender}
+					go p.LoopRTCP(peer.uid, p.subscribers[peer.uid])
+					renegotiate = true
+				}
+			}
+
+			p.Unlock()
+		}
+		if !renegotiate {
+			ec <- nil
+			return
+		}
+
 		offer, err := peer.pc.CreateOffer(nil)
 		if err != nil {
 			ec <- buildError(ErrorServerCreateOffer, err)
@@ -324,7 +326,7 @@ func (r *Router) subscribe(rid, uid, cid string) (*webrtc.SessionDescription, er
 
 	select {
 	case err := <-ec:
-		return nil, err
+		return &webrtc.SessionDescription{}, err
 	case <-gc:
 		return peer.pc.LocalDescription(), nil
 	case <-timer.C:
