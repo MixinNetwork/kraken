@@ -11,6 +11,8 @@ type Configuration struct {
 	Engine struct {
 		Interface string `toml:"interface"`
 		LogLevel  int    `toml:"log-level"`
+		PortMin   uint16 `toml:"port-min"`
+		PortMax   uint16 `toml:"port-max"`
 	} `toml:"engine"`
 	Turn struct {
 		Host   string `toml:"host"`

@@ -20,6 +20,8 @@ type State struct {
 type Engine struct {
 	IP        string
 	Interface string
+	PortMin   uint16
+	PortMax   uint16
 
 	State State
 	rooms *rmap
@@ -33,9 +35,11 @@ func BuildEngine(conf *Configuration) (*Engine, error) {
 	engine := &Engine{
 		IP:        ip,
 		Interface: conf.Engine.Interface,
+		PortMin:   conf.Engine.PortMin,
+		PortMax:   conf.Engine.PortMax,
 		rooms:     rmapAllocate(),
 	}
-	logger.Printf("BuildEngine(IP: %s, Interface: %s)\n", engine.IP, engine.Interface)
+	logger.Printf("BuildEngine(IP: %s, Interface: %s, Ports: %d-%d)\n", engine.IP, engine.Interface, engine.PortMin, engine.PortMax)
 	return engine, nil
 }
 

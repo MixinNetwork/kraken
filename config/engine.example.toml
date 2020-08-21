@@ -2,6 +2,9 @@
 # the network interface to bind
 interface = "eth0"
 log-level = 10
+# the UDP port range, leave them to 0 for default strategy
+port-min = 0
+port-max = 0
 
 [turn]
 host = "turn:turn.kraken.fm:443"

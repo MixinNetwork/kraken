@@ -53,6 +53,7 @@ func (r *Router) create(rid, uid, callback string, offer webrtc.SessionDescripti
 	se.SetInterfaceFilter(func(in string) bool { return in == r.engine.Interface })
 	se.SetNAT1To1IPs([]string{r.engine.IP}, webrtc.ICECandidateTypeHost)
 	se.SetICETimeouts(10*time.Second, 30*time.Second, 2*time.Second)
+	se.SetEphemeralUDPPortRange(r.engine.PortMin, r.engine.PortMax)
 
 	codec := webrtc.NewRTPOpusCodec(webrtc.DefaultPayloadTypeOpus, 48000)
 	me := webrtc.MediaEngine{}
