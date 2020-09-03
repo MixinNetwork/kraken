@@ -10,6 +10,7 @@ import (
 type Configuration struct {
 	Engine struct {
 		Interface string `toml:"interface"`
+		Address   string `toml:"address"`
 		LogLevel  int    `toml:"log-level"`
 		PortMin   uint16 `toml:"port-min"`
 		PortMax   uint16 `toml:"port-max"`

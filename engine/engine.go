@@ -28,7 +28,7 @@ type Engine struct {
 }
 
 func BuildEngine(conf *Configuration) (*Engine, error) {
-	ip, err := getIPFromInterface(conf.Engine.Interface)
+	ip, err := getIPFromInterface(conf.Engine.Interface, conf.Engine.Address)
 	if err != nil {
 		return nil, err
 	}
@@ -78,13 +78,17 @@ func (engine *Engine) Loop() {
 	}
 }
 
-func getIPFromInterface(in string) (string, error) {
+func getIPFromInterface(iname string, addr string) (string, error) {
+	if addr != "" {
+		return addr, nil
+	}
+
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return "", err
 	}
 	for _, i := range ifaces {
-		if i.Name != in {
+		if i.Name != iname {
 			continue
 		}
 		addrs, err := i.Addrs()
@@ -100,7 +104,8 @@ func getIPFromInterface(in string) (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("no address for interface %s", in)
+
+	return "", fmt.Errorf("no address for interface %s", iname)
 }
 
 type pmap struct {
