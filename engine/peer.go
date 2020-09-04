@@ -18,6 +18,7 @@ import (
 
 const (
 	peerTrackClosedId          = "CLOSED"
+    peerListenOnly             = "LISTEN_ONLY"
 	peerTrackConnectionTimeout = 10 * time.Second
 	peerTrackReadTimeout       = 30 * time.Second
 	rtpBufferSize              = 65536
@@ -86,6 +87,13 @@ func (p *Peer) id() string {
 	return fmt.Sprintf("%s:%s:%s", p.rid, p.uid, p.cid)
 }
 
+func (p *Peer) setPeerCidListenOnly() {
+    p.Lock()
+	defer p.Unlock()
+    p.track = nil
+    p.cid = peerListenOnly
+}
+
 func (p *Peer) Close() error {
 	logger.Printf("PeerClose(%s) now\n", p.id())
 	p.Lock()
@@ -95,6 +103,11 @@ func (p *Peer) Close() error {
 		logger.Printf("PeerClose(%s) already\n", p.id())
 		return nil
 	}
+    
+    if p.cid == peerListenOnly {
+        logger.Printf("Peer is listen-only, keeping connection open. \n", p.id())
+		return nil
+    }
 
 	p.track = nil
 	p.buffer = nil
