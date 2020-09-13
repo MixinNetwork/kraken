@@ -47,7 +47,7 @@ func (r *Router) list(rid string) ([]map[string]interface{}, error) {
 	return peers, nil
 }
 
-func (r *Router) create(rid, uid, callback string, offer webrtc.SessionDescription) (*Peer, error) {
+func (r *Router) create(rid, uid, callback string, listenOnlyEnabled bool, offer webrtc.SessionDescription) (*Peer, error) {
 	se := webrtc.SettingEngine{}
 	se.SetLite(true)
 	se.SetInterfaceFilter(func(in string) bool { return in == r.engine.Interface })
@@ -70,7 +70,7 @@ func (r *Router) create(rid, uid, callback string, offer webrtc.SessionDescripti
 		return nil, buildError(ErrorServerNewPeerConnection, err)
 	}
 
-	peer := BuildPeer(rid, uid, pc, callback)
+	peer := BuildPeer(rid, uid, pc, callback, listenOnlyEnabled)
 	track, err := pc.NewTrack(webrtc.DefaultPayloadTypeOpus, rand.Uint32(), peer.cid, peer.uid)
 	if err != nil {
 		return nil, buildError(ErrorServerNewTrack, err)
@@ -102,7 +102,7 @@ func (r *Router) create(rid, uid, callback string, offer webrtc.SessionDescripti
 	return peer, nil
 }
 
-func (r *Router) publish(rid, uid string, jsep string, limit int, callback string) (string, *webrtc.SessionDescription, error) {
+func (r *Router) publish(rid, uid string, jsep string, limit int, callback string, listenOnlyEnabled bool) (string, *webrtc.SessionDescription, error) {
 	if err := validateId(rid); err != nil {
 		return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid rid format %s %s", rid, err.Error()))
 	}
@@ -147,7 +147,7 @@ func (r *Router) publish(rid, uid string, jsep string, limit int, callback strin
 	pc := make(chan *Peer)
 	ec := make(chan error)
 	go func() {
-		peer, err := r.create(rid, uid, callback, offer)
+		peer, err := r.create(rid, uid, callback, listenOnlyEnabled, offer)
 		if err != nil {
 			ec <- err
 		} else {
@@ -256,10 +256,31 @@ func (r *Router) subscribe(rid, uid, cid string) (*webrtc.SessionDescription, er
 	room := r.engine.GetRoom(rid)
 	room.Lock()
 	defer room.Unlock()
-
+    
 	peer, err := room.get(uid, cid)
+    
 	if err != nil {
-		return nil, err
+        var createListenOnlyPeer bool
+        if peer == nil { // if peer not found
+            for _,p := range room.m {
+                np, erro := room.get(p.uid, p.cid)
+                if erro == nil {
+                    if np.listenOnlyEnabled{ 
+                        createListenOnlyPeer = true // if any peer in room has listenOnlyEnabled true
+                    }
+                }
+                break
+            }
+        }
+        if createListenOnlyPeer { 
+            var dummyOffer webrtc.SessionDescription
+            peer, err := r.create(rid, uid, "", true, dummyOffer)
+            if err == nil {
+                peer.setPeerCidListenOnly() // this will allow the connection to stay open without track
+                logger.Printf("Created listen only peer %s in room %s.", uid, rid)
+            }
+        }
+        return nil, err       
 	}
 
 	timer := time.NewTimer(peerTrackConnectionTimeout)
@@ -311,6 +332,7 @@ func (r *Router) subscribe(rid, uid, cid string) (*webrtc.SessionDescription, er
 		}
 
 		offer, err := peer.pc.CreateOffer(nil)
+        
 		if err != nil {
 			ec <- buildError(ErrorServerCreateOffer, err)
 			return
@@ -333,80 +355,6 @@ func (r *Router) subscribe(rid, uid, cid string) (*webrtc.SessionDescription, er
 	case <-timer.C:
 		err := fmt.Errorf("subscribe(%s,%s,%s) timeout", rid, uid, cid)
 		return nil, buildError(ErrorServerTimeout, err)
-	}
-}
-
-func (r *Router) registerListenOnlyPeer(rid string, uid string, jsep string, limit int, callback string) (string, *webrtc.SessionDescription, error) {
-    if err := validateId(rid); err != nil {
-		return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid rid format %s %s", rid, err.Error()))
-	}
-	if err := validateId(uid); err != nil {
-		return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid uid format %s %s", uid, err.Error()))
-	}
-	var offer webrtc.SessionDescription
-	err := json.Unmarshal([]byte(jsep), &offer)
-	if err != nil {
-		return "", nil, buildError(ErrorInvalidSDP, err)
-	}
-	if offer.Type != webrtc.SDPTypeOffer {
-		return "", nil, buildError(ErrorInvalidSDP, fmt.Errorf("invalid sdp type %s", offer.Type))
-	}
-
-	parser := sdp.SessionDescription{}
-	err = parser.Unmarshal([]byte(offer.SDP))
-	if err != nil {
-		return "", nil, buildError(ErrorInvalidSDP, err)
-	}
-    
-	room := r.engine.GetRoom(rid)
-	room.Lock()
-	defer room.Unlock()
-
-    if limit > 0 {
-		for i, p := range room.m {
-			cid := uuid.FromStringOrNil(p.cid)
-			if cid.String() == uuid.Nil.String() || uid == i {
-				continue
-			}
-			limit--
-		}
-		if limit <= 0 {
-			return "", nil, buildError(ErrorRoomFull, fmt.Errorf("room full %d", limit))
-		}
-	}
-    
-//	peer, err := room.get(uid, cid)
-//	if err != nil {
-//		return nil, err
-//	}
-
-	timer := time.NewTimer(peerTrackConnectionTimeout)
-	defer timer.Stop()
-    
-    pc := make(chan *Peer)
-	ec := make(chan error)
-	go func() {
-		peer, err := r.create(rid, uid, callback, offer)
-		if err != nil {
-			ec <- err
-		} else {
-			pc <- peer
-		}
-	}()
-	select {
-	case err := <-ec:
-		return "", nil, err
-	case peer := <-pc:
-		old := room.m[peer.uid]
-		if old != nil {
-			old.Close()
-		}
-		room.m[peer.uid] = peer
-        peer.setPeerCidListenOnly() // <---- This line is key
-		return peer.cid, peer.pc.LocalDescription(), nil
-	case <-timer.C:
-		err := fmt.Errorf("publish(%s,%s) timeout", rid, uid)
-		return "", nil, buildError(ErrorServerTimeout, err)
 	}
 }
 
