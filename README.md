@@ -12,7 +12,7 @@ Both Unified Plan and RTCP-MUX supported, so that only one UDP port per particip
 
 This is the daemon that load balance all engine instances according to their system load, and it will direct all peers in a room to the same engine instance.
 
-### engine 
+### engine
 
 The engine handles rooms, all peers in a room should connect to the same engine instance. No need to create rooms, a room is just an ID to distribute streams.
 
@@ -31,7 +31,7 @@ pc.onicecandidate = ({candidate}) => {
 };
 
 // play the audio stream when available
-pc.ontrack = (event) => { 
+pc.ontrack = (event) => {
   el = document.createElement(event.track.kind)
   el.id = aid;
   el.srcObject = stream;
@@ -49,18 +49,19 @@ await pc.setLocalDescription(await pc.createOffer());
 // RPC publish to roomId, with SDP offer
 var res = await rpc('publish', [roomId, userId, JSON.stringify(pc.localDescription)]);
 // publish should respond an SDP answer
-if (res.data && res.data.sdp.type === 'answer') {
-  await pc.setRemoteDescription(res.data.sdp);
+var jsep = JSON.parse(res.data.jsep);
+if (jsep.type == 'answer') {
+  await pc.setRemoteDescription(jsep);
   trackId = res.data.track;
   subscribe(pc);
 }
 
-// RPC subscribe to roomId periodically  
+// RPC subscribe to roomId periodically
 async function subscribe(pc) {
   var res = await rpc('subscribe', [roomId, userId, trackId]);
-
-  if (res.data && res.data.type === 'offer') {
-    await pc.setRemoteDescription(res.data);
+  var jsep = JSON.parse(res.data.jsep);
+  if (jsep.type == 'offer') {
+    await pc.setRemoteDescription(jsep);
     var sdp = await pc.createAnswer();
     await pc.setLocalDescription(sdp);
     // RPC anwser the subscribe offer
@@ -74,15 +75,15 @@ async function subscribe(pc) {
 async function rpc(method, params = []) {
   const response = await fetch('http://localhost:7000', {
     method: 'POST',
-    mode: 'cors', 
+    mode: 'cors',
     headers: {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({id: uuidv4(), method: method, params: params})
   });
-  return response.json(); 
+  return response.json();
 }
-``` 
+```
 
 ## Quick Start
 
