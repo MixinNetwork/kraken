@@ -98,7 +98,7 @@ ip address # get your network interface name, edit config/engine.toml
 ./kraken -c config/engine.toml -s engine
 ```
 
-Get the source code of Mornin(https://github.com/fox-one/mornin.fm) and configure it to use your local kraken API.
+Get the source code of either [kraken.fm](https://github.com/MixinNetwork/kraken.fm) or [Mornin](https://github.com/fox-one/mornin.fm), follow their guides to use your local kraken API.
 
 ## Community
 
