@@ -131,6 +131,14 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 			jsep, _ := json.Marshal(offer)
 			renderer.RenderData(map[string]interface{}{"type": offer.Type, "sdp": offer.SDP, "jsep": string(jsep)})
 		}
+    case "registerListenOnlyPeer":
+		cid, answer, err := impl.registerListenOnlyPeer(call.Params)
+		if err != nil {
+			renderer.RenderError(err)
+		} else {
+			jsep, _ := json.Marshal(answer)
+			renderer.RenderData(map[string]interface{}{"track": cid, "sdp": answer, "jsep": string(jsep)})
+		}
 	case "answer":
 		err := impl.answer(call.Params)
 		if err != nil {
@@ -190,8 +198,7 @@ func (r *R) publish(params []interface{}) (string, *webrtc.SessionDescription, e
 	}
 	var limit int
 	var callback string
-    var listenOnlyEnabled bool
-	if len(params) >= 5 {
+	if len(params) == 5 {
 		i, err := strconv.ParseInt(fmt.Sprint(params[3]), 10, 64)
 		if err != nil {
 			return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid limit type %v %v", params[3], err))
@@ -207,15 +214,8 @@ func (r *R) publish(params []interface{}) (string, *webrtc.SessionDescription, e
         if cbk != "" {
             callback = cbk    
         }
-        if len(params) == 6 {
-            loe, err := strconv.ParseBool(fmt.Sprint(params[5]))
-            if err != nil{
-                return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid listenOnlyEnabled type %v %v", params[5], err))
-            }
-            listenOnlyEnabled = loe
-        }
 	}
-	return r.router.publish(rid, uid, sdp, limit, callback, listenOnlyEnabled)
+	return r.router.publish(rid, uid, sdp, limit, callback)
 }
 
 func (r *R) restart(params []interface{}) (*webrtc.SessionDescription, error) {
@@ -268,6 +268,42 @@ func (r *R) subscribe(params []interface{}) (*webrtc.SessionDescription, error) 
 		return nil, buildError(ErrorInvalidParams, err)
 	}
 	return r.router.subscribe(ids[0], ids[1], ids[2])
+}
+
+func (r *R) registerListenOnlyPeer(params []interface{}) (string, *webrtc.SessionDescription, error) {
+	if len(params) < 3 {
+		return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid params count %d", len(params))) 
+	}
+	rid, ok := params[0].(string)
+	if !ok {
+		return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid rid type %v", params[0]))
+	}
+	uid, ok := params[1].(string)
+	if !ok {
+		return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid uid type %v", params[1]))
+	}
+	sdp, ok := params[2].(string)
+	if !ok {
+		return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid sdp type %v", params[2]))
+	}
+    var limit int
+	var callback string
+	if len(params) == 5 {
+		i, err := strconv.ParseInt(fmt.Sprint(params[3]), 10, 64)
+		if err != nil {
+			return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid limit type %v %v", params[3], err))
+		}
+		limit = int(i)
+		cbk, ok := params[4].(string)
+		if !ok {
+			return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid callback type %v", params[4]))
+		}
+		if !strings.HasPrefix(cbk, "https://") {
+			return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid callback value %s", cbk))
+		}
+		callback = cbk
+	}
+	return r.router.registerListenOnlyPeer(rid, uid, sdp, limit, callback)
 }
 
 func (r *R) answer(params []interface{}) error {

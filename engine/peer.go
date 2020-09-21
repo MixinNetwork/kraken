@@ -52,7 +52,6 @@ type Peer struct {
 	uid         string
 	cid         string
 	callback    string
-    listenOnlyEnabled bool
 	pc          *webrtc.PeerConnection
 	track       *webrtc.Track
 	publishers  map[string]*Sender
@@ -66,14 +65,13 @@ type Peer struct {
 	connected   chan bool
 }
 
-func BuildPeer(rid, uid string, pc *webrtc.PeerConnection, callback string, listenOnlyEnabled bool) *Peer {
+func BuildPeer(rid, uid string, pc *webrtc.PeerConnection, callback string) *Peer {
 	cid, err := uuid.NewV4()
 	if err != nil {
 		panic(err)
 	}
 	peer := &Peer{rid: rid, uid: uid, cid: cid.String(), pc: pc}
 	peer.callback = callback
-    peer.listenOnlyEnabled = listenOnlyEnabled
 	peer.connected = make(chan bool, 1)
 	peer.lost = make(chan *rtp.Header, 17)
 	peer.queue = make(chan *rtp.Packet, 48000)
