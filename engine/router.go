@@ -3,7 +3,6 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"net/url"
 	"time"
 
@@ -55,9 +54,17 @@ func (r *Router) create(rid, uid, callback string, offer webrtc.SessionDescripti
 	se.SetICETimeouts(10*time.Second, 30*time.Second, 2*time.Second)
 	se.SetEphemeralUDPPortRange(r.engine.PortMin, r.engine.PortMax)
 
-	codec := webrtc.NewRTPOpusCodec(webrtc.DefaultPayloadTypeOpus, 48000)
-	me := webrtc.MediaEngine{}
-	me.RegisterCodec(codec)
+	me := &webrtc.MediaEngine{}
+	opusChrome := webrtc.RTPCodecParameters{
+		RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1", RTCPFeedback: nil},
+		PayloadType:        111,
+	}
+	opusFirefox := webrtc.RTPCodecParameters{
+		RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1", RTCPFeedback: nil},
+		PayloadType:        109,
+	}
+	me.RegisterCodec(opusChrome, webrtc.RTPCodecTypeAudio)
+	me.RegisterCodec(opusFirefox, webrtc.RTPCodecTypeAudio)
 
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(me), webrtc.WithSettingEngine(se))
 
@@ -71,11 +78,11 @@ func (r *Router) create(rid, uid, callback string, offer webrtc.SessionDescripti
 	}
 
 	peer := BuildPeer(rid, uid, pc, callback)
-	track, err := pc.NewTrack(webrtc.DefaultPayloadTypeOpus, rand.Uint32(), peer.cid, peer.uid)
+	track, err := webrtc.NewTrackLocalStaticRTP(opusChrome.RTPCodecCapability, peer.cid, peer.uid)
 	if err != nil {
 		return nil, buildError(ErrorServerNewTrack, err)
 	}
-	_, err = pc.AddTransceiverFromTrack(track, webrtc.RtpTransceiverInit{
+	_, err = pc.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{
 		Direction: webrtc.RTPTransceiverDirectionSendrecv,
 	})
 	if err != nil {
@@ -298,7 +305,6 @@ func (r *Router) subscribe(rid, uid, cid string) (*webrtc.SessionDescription, er
 				} else {
 					peer.publishers[p.uid] = &Sender{id: p.cid, rtp: sender}
 					p.subscribers[peer.uid] = &Sender{id: peer.cid, rtp: sender}
-					go p.LoopRTCP(peer.uid, p.subscribers[peer.uid])
 					renegotiate = true
 				}
 			}
