@@ -13,6 +13,7 @@ require (
 	github.com/gofrs/uuid v4.0.0+incompatible
 	github.com/gorilla/handlers v1.5.1
 	github.com/pelletier/go-toml v1.8.1
+	github.com/pion/interceptor v0.0.9
 	github.com/pion/rtcp v1.2.6
 	github.com/pion/rtp v1.6.2
 	github.com/pion/sdp/v2 v2.4.0

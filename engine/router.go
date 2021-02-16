@@ -8,6 +8,8 @@ import (
 
 	"github.com/MixinNetwork/mixin/logger"
 	"github.com/gofrs/uuid"
+	"github.com/pion/interceptor"
+	"github.com/pion/interceptor/pkg/nack"
 	"github.com/pion/sdp/v2"
 	"github.com/pion/webrtc/v3"
 )
@@ -66,7 +68,19 @@ func (r *Router) create(rid, uid, callback string, offer webrtc.SessionDescripti
 	me.RegisterCodec(opusChrome, webrtc.RTPCodecTypeAudio)
 	me.RegisterCodec(opusFirefox, webrtc.RTPCodecTypeAudio)
 
-	api := webrtc.NewAPI(webrtc.WithMediaEngine(me), webrtc.WithSettingEngine(se))
+	ir := &interceptor.Registry{}
+	generator, err := nack.NewGeneratorInterceptor()
+	if err != nil {
+		panic(err)
+	}
+	responder, err := nack.NewResponderInterceptor()
+	if err != nil {
+		panic(err)
+	}
+	ir.Add(generator)
+	ir.Add(responder)
+
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(me), webrtc.WithSettingEngine(se), webrtc.WithInterceptorRegistry(ir))
 
 	pcConfig := webrtc.Configuration{
 		BundlePolicy:  webrtc.BundlePolicyMaxBundle,
