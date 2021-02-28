@@ -9,6 +9,10 @@ import (
 	"github.com/MixinNetwork/mixin/logger"
 )
 
+const (
+	engineStateLoopPeriod = 60 * time.Second
+)
+
 type State struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 	ActivePeers int       `json:"active_peers"`
@@ -74,7 +78,7 @@ func (engine *Engine) Loop() {
 		}
 
 		engine.rooms.RUnlock()
-		time.Sleep(60 * time.Second)
+		time.Sleep(engineStateLoopPeriod)
 	}
 }
 
