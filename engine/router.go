@@ -91,18 +91,6 @@ func (r *Router) create(rid, uid, callback string, offer webrtc.SessionDescripti
 		return nil, buildError(ErrorServerNewPeerConnection, err)
 	}
 
-	peer := BuildPeer(rid, uid, pc, callback)
-	track, err := webrtc.NewTrackLocalStaticRTP(opusChrome.RTPCodecCapability, peer.cid, peer.uid)
-	if err != nil {
-		return nil, buildError(ErrorServerNewTrack, err)
-	}
-	_, err = pc.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{
-		Direction: webrtc.RTPTransceiverDirectionSendrecv,
-	})
-	if err != nil {
-		return nil, buildError(ErrorServerAddTransceiver, err)
-	}
-
 	err = pc.SetRemoteDescription(offer)
 	if err != nil {
 		pc.Close()
@@ -113,13 +101,15 @@ func (r *Router) create(rid, uid, callback string, offer webrtc.SessionDescripti
 		pc.Close()
 		return nil, buildError(ErrorServerCreateAnswer, err)
 	}
-	gatherComplete := webrtc.GatheringCompletePromise(peer.pc)
+	gatherComplete := webrtc.GatheringCompletePromise(pc)
 	err = pc.SetLocalDescription(answer)
 	if err != nil {
 		pc.Close()
 		return nil, buildError(ErrorServerSetLocalAnswer, err)
 	}
 	<-gatherComplete
+
+	peer := BuildPeer(rid, uid, pc, callback)
 	return peer, nil
 }
 
