@@ -90,7 +90,7 @@ async function rpc(method, params = []) {
 Setup Golang development environment at first.
 
 ```
-git clone github.com/MixinNetwork/kraken
+git clone https://github.com/MixinNetwork/kraken
 cd kraken && go build
 
 cp config/engine.example.toml config/engine.toml
