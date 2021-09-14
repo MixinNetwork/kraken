@@ -40,18 +40,19 @@ type Sender struct {
 
 type Peer struct {
 	sync.RWMutex
-	rid         string
-	uid         string
-	cid         string
-	callback    string
-	pc          *webrtc.PeerConnection
-	track       *webrtc.TrackLocalStaticRTP
-	publishers  map[string]*Sender
-	subscribers map[string]*Sender
-	queue       chan *rtp.Packet
-	timestamp   uint32
-	sequence    uint16
-	connected   chan bool
+	rid                  string
+	uid                  string
+	cid                  string
+	callback             string
+	pc                   *webrtc.PeerConnection
+	track                *webrtc.TrackLocalStaticRTP
+	publishers           map[string]*Sender
+	subscribers          map[string]*Sender
+	queue                chan *rtp.Packet
+	timestamp            uint32
+	sequence             uint16
+	connected            chan bool
+	dataChannelConnected chan bool
 }
 
 func BuildPeer(rid, uid string, pc *webrtc.PeerConnection, callback string) *Peer {
@@ -62,6 +63,7 @@ func BuildPeer(rid, uid string, pc *webrtc.PeerConnection, callback string) *Pee
 	peer := &Peer{rid: rid, uid: uid, cid: cid.String(), pc: pc}
 	peer.callback = callback
 	peer.connected = make(chan bool, 1)
+	peer.dataChannelConnected = make(chan bool, 1)
 	peer.queue = make(chan *rtp.Packet, 48000)
 	peer.publishers = make(map[string]*Sender)
 	peer.subscribers = make(map[string]*Sender)
@@ -97,6 +99,7 @@ func (peer *Peer) handle() {
 
 		select {
 		case <-peer.connected:
+		case <-peer.dataChannelConnected:
 		case <-timer.C:
 			logger.Printf("HandlePeer(%s) OnTrackTimeout()\n", peer.id())
 			peer.Close()
@@ -135,6 +138,10 @@ func (peer *Peer) handle() {
 			logger.Printf("HandlePeer(%s) OnTrack(%d, %d) end with %s\n", peer.id(), rt.PayloadType(), rt.SSRC(), err.Error())
 		}
 		peer.Close()
+	})
+	peer.pc.OnDataChannel(func(dc *webrtc.DataChannel) {
+		logger.Printf("HandlePeer(%s) OnDataChannel() datachannel connected.", peer.id())
+		peer.dataChannelConnected <- true
 	})
 }
 
