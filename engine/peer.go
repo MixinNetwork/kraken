@@ -11,6 +11,7 @@ import (
 
 	"github.com/MixinNetwork/mixin/logger"
 	"github.com/gofrs/uuid"
+	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 )
 
@@ -18,10 +19,6 @@ const (
 	peerTrackClosedId          = "CLOSED"
 	peerTrackConnectionTimeout = 10 * time.Second
 	peerTrackReadTimeout       = 30 * time.Second
-	rtpBufferSize              = 65536
-	rtpClockRate               = 48000
-	rtpPacketSequenceMax       = ^uint16(0)
-	rtpPacketExpiration        = rtpClockRate / 2
 )
 
 var clbkClient *http.Client
@@ -47,6 +44,7 @@ type Peer struct {
 	track       *webrtc.TrackLocalStaticRTP
 	publishers  map[string]*Sender
 	subscribers map[string]*Sender
+	queue       chan *rtp.Packet
 	connected   chan bool
 }
 
@@ -58,6 +56,7 @@ func BuildPeer(rid, uid string, pc *webrtc.PeerConnection, callback string) *Pee
 	peer := &Peer{rid: rid, uid: uid, cid: cid.String(), pc: pc}
 	peer.callback = callback
 	peer.connected = make(chan bool, 1)
+	peer.queue = make(chan *rtp.Packet, 8)
 	peer.publishers = make(map[string]*Sender)
 	peer.subscribers = make(map[string]*Sender)
 	peer.handle()
@@ -162,20 +161,42 @@ func (peer *Peer) callbackOnTrack() error {
 }
 
 func (peer *Peer) copyTrack(src *webrtc.TrackRemote, dst *webrtc.TrackLocalStaticRTP) error {
+	go func() error {
+		defer close(peer.queue)
+
+		for {
+			pkt, _, err := src.ReadRTP()
+			if err == io.EOF {
+				logger.Verbosef("copyTrack(%s) EOF\n", peer.id())
+				return nil
+			}
+			if err != nil {
+				logger.Verbosef("copyTrack(%s) error %s\n", peer.id(), err.Error())
+				return err
+			}
+			peer.queue <- pkt
+		}
+	}()
+
+	timer := time.NewTimer(peerTrackReadTimeout)
+	defer timer.Stop()
+
 	for {
-		pkt, _, err := src.ReadRTP()
-		if err == io.EOF {
-			logger.Verbosef("copyTrack(%s) EOF\n", peer.id())
-			return nil
+		select {
+		case pkt, ok := <-peer.queue:
+			if !ok {
+				return fmt.Errorf("peer queue closed")
+			}
+			err := dst.WriteRTP(pkt)
+			if err != nil {
+				return fmt.Errorf("peer track write %v", err)
+			}
+		case <-timer.C:
+			return fmt.Errorf("peer track read timeout")
 		}
-		if err != nil {
-			logger.Verbosef("copyTrack(%s) ReadRTP error %s\n", peer.id(), err.Error())
-			return err
+		if !timer.Stop() {
+			<-timer.C
 		}
-		err = dst.WriteRTP(pkt)
-		if err != nil {
-			logger.Verbosef("copyTrack(%s) WriteRTP error %s\n", peer.id(), err.Error())
-			return err
-		}
+		timer.Reset(peerTrackReadTimeout)
 	}
 }
