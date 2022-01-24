@@ -10,10 +10,10 @@ require (
 	github.com/gofrs/uuid v4.2.0+incompatible
 	github.com/gorilla/handlers v1.5.1
 	github.com/pelletier/go-toml v1.9.4
-	github.com/pion/interceptor v0.1.5
+	github.com/pion/interceptor v0.1.7
 	github.com/pion/rtp v1.7.4
 	github.com/pion/sdp/v2 v2.4.0
-	github.com/pion/webrtc/v3 v3.1.14
+	github.com/pion/webrtc/v3 v3.1.17
 	github.com/unrolled/render v1.4.1
 )
 
@@ -22,7 +22,7 @@ require (
 	github.com/fsnotify/fsnotify v1.4.9 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/pion/datachannel v1.5.2 // indirect
-	github.com/pion/dtls/v2 v2.0.13 // indirect
+	github.com/pion/dtls/v2 v2.1.0 // indirect
 	github.com/pion/ice/v2 v2.1.18 // indirect
 	github.com/pion/logging v0.2.2 // indirect
 	github.com/pion/mdns v0.0.5 // indirect
