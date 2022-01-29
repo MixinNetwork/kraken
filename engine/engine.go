@@ -87,29 +87,13 @@ func getIPFromInterface(iname string, addr string) (string, error) {
 		return addr, nil
 	}
 
-	ifaces, err := net.Interfaces()
+	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
 		return "", err
 	}
-	for _, i := range ifaces {
-		if i.Name != iname {
-			continue
-		}
-		addrs, err := i.Addrs()
-		if err != nil {
-			return "", err
-		}
-		for _, addr := range addrs {
-			switch v := addr.(type) {
-			case *net.IPNet:
-				return v.IP.String(), nil
-			case *net.IPAddr:
-				return v.IP.String(), nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("no address for interface %s", iname)
+	defer conn.Close()
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	return localAddr.IP.String(), nil
 }
 
 type pmap struct {
