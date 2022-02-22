@@ -49,10 +49,7 @@ type Peer struct {
 }
 
 func BuildPeer(rid, uid string, pc *webrtc.PeerConnection, callback string) *Peer {
-	cid, err := uuid.NewV4()
-	if err != nil {
-		panic(err)
-	}
+	cid := uuid.Must(uuid.NewV4())
 	peer := &Peer{rid: rid, uid: uid, cid: cid.String(), pc: pc}
 	peer.callback = callback
 	peer.connected = make(chan bool, 1)
