@@ -178,25 +178,30 @@ func (peer *Peer) copyTrack(src *webrtc.TrackRemote, dst *webrtc.TrackLocalStati
 		}
 	}()
 
+	for {
+		err := peer.consumeQueue(dst)
+		if err != nil {
+			return err
+		}
+	}
+}
+
+func (peer *Peer) consumeQueue(dst *webrtc.TrackLocalStaticRTP) error {
 	timer := time.NewTimer(peerTrackReadTimeout)
 	defer timer.Stop()
 
-	for {
-		select {
-		case pkt, ok := <-peer.queue:
-			if !ok {
-				return fmt.Errorf("peer queue closed")
-			}
-			err := dst.WriteRTP(pkt)
-			if err != nil {
-				return fmt.Errorf("peer track write %v", err)
-			}
-		case <-timer.C:
-			return fmt.Errorf("peer track read timeout")
+	select {
+	case pkt, ok := <-peer.queue:
+		if !ok {
+			return fmt.Errorf("peer queue closed")
 		}
-		if !timer.Stop() {
-			<-timer.C
+		err := dst.WriteRTP(pkt)
+		if err != nil {
+			return fmt.Errorf("peer track write %v", err)
 		}
-		timer.Reset(peerTrackReadTimeout)
+	case <-timer.C:
+		return fmt.Errorf("peer track read timeout")
 	}
+
+	return nil
 }
