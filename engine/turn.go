@@ -9,9 +9,10 @@ import (
 )
 
 type NTS struct {
-	URLs       string `json:"urls"`
-	Credential string `json:"credential"`
-	Username   string `json:"username"`
+	URLs             string `json:"urls"`
+	Credential       string `json:"credential"`
+	CredentialBase64 string `json:"credential_base64"`
+	Username         string `json:"username"`
 }
 
 func turn(conf *Configuration, uid string) ([]*NTS, error) {
@@ -21,17 +22,21 @@ func turn(conf *Configuration, uid string) ([]*NTS, error) {
 	if _, err := mac.Write([]byte(username)); err != nil {
 		return nil, err
 	}
-	credential := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	credentialBuf := mac.Sum(nil)
+	credential := base64.StdEncoding.EncodeToString(credentialBuf)
+	credentialBase64 := base64.RawURLEncoding.EncodeToString(credentialBuf)
 	url := conf.Turn.Host
 	ownUDP := &NTS{
-		URLs:       url + "?transport=udp",
-		Username:   username,
-		Credential: credential,
+		URLs:             url + "?transport=udp",
+		Username:         username,
+		Credential:       credential,
+		CredentialBase64: credentialBase64,
 	}
 	ownTCP := &NTS{
-		URLs:       url + "?transport=tcp",
-		Username:   username,
-		Credential: credential,
+		URLs:             url + "?transport=tcp",
+		Username:         username,
+		Credential:       credential,
+		CredentialBase64: credentialBase64,
 	}
 	return []*NTS{ownUDP, ownTCP}, nil
 }
