@@ -57,7 +57,7 @@ func (engine *Engine) Loop() {
 		engine.State.ActivePeers = 0
 		engine.State.ClosedPeers = 0
 
-		for _, pm := range engine.rooms.m {
+		for rid, pm := range engine.rooms.m {
 			pm.RLock()
 			ap, cp := 0, 0
 			for _, p := range pm.m {
@@ -73,6 +73,7 @@ func (engine *Engine) Loop() {
 				engine.State.ActiveRooms += 1
 			} else {
 				engine.State.ClosedRooms += 1
+				delete(engine.rooms.m, rid)
 			}
 			pm.RUnlock()
 		}
