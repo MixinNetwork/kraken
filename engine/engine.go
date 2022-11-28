@@ -49,7 +49,7 @@ func BuildEngine(conf *Configuration) (*Engine, error) {
 
 func (engine *Engine) Loop() {
 	for {
-		engine.rooms.RLock()
+		engine.rooms.Lock()
 
 		engine.State.UpdatedAt = time.Now()
 		engine.State.ActiveRooms = 0
@@ -78,7 +78,7 @@ func (engine *Engine) Loop() {
 			pm.RUnlock()
 		}
 
-		engine.rooms.RUnlock()
+		engine.rooms.Unlock()
 		time.Sleep(engineStateLoopPeriod)
 	}
 }
