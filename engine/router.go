@@ -21,7 +21,7 @@ func NewRouter(engine *Engine) *Router {
 	return &Router{engine: engine}
 }
 
-func (r *Router) info() (interface{}, error) {
+func (r *Router) info() (any, error) {
 	rm := r.engine.rooms
 	rm.RLock()
 	defer rm.RUnlock()
@@ -29,17 +29,17 @@ func (r *Router) info() (interface{}, error) {
 	return r.engine.State, nil
 }
 
-func (r *Router) list(rid string) ([]map[string]interface{}, error) {
+func (r *Router) list(rid string) ([]map[string]any, error) {
 	room := r.engine.GetRoom(rid)
 	room.RLock()
 	defer room.RUnlock()
-	peers := make([]map[string]interface{}, 0)
+	peers := make([]map[string]any, 0)
 	for _, p := range room.m {
 		cid := uuid.FromStringOrNil(p.cid)
 		if cid.String() == uuid.Nil.String() {
 			continue
 		}
-		peers = append(peers, map[string]interface{}{
+		peers = append(peers, map[string]any{
 			"id":    p.uid,
 			"track": cid.String(),
 		})

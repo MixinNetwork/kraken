@@ -18,7 +18,7 @@ type R struct {
 type Call struct {
 	Id     string        `json:"id"`
 	Method string        `json:"method"`
-	Params []interface{} `json:"params"`
+	Params []any `json:"params"`
 }
 
 type Render struct {
@@ -27,8 +27,8 @@ type Render struct {
 	id   string
 }
 
-func (r *Render) RenderData(data interface{}) {
-	body := map[string]interface{}{"data": data}
+func (r *Render) RenderData(data any) {
+	body := map[string]any{"data": data}
 	if r.id != "" {
 		body["id"] = r.id
 	}
@@ -36,7 +36,7 @@ func (r *Render) RenderData(data interface{}) {
 }
 
 func (r *Render) RenderError(err error) {
-	body := map[string]interface{}{"error": err.Error()}
+	body := map[string]any{"error": err.Error()}
 	if r.id != "" {
 		body["id"] = r.id
 	}
@@ -48,7 +48,7 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 	d := json.NewDecoder(r.Body)
 	d.UseNumber()
 	if err := d.Decode(&call); err != nil {
-		render.New().JSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
+		render.New().JSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
 	renderer := &Render{w: w, impl: render.New(), id: call.Id}
@@ -60,13 +60,13 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 
 func registerHanders(router *httptreemux.TreeMux) {
 	router.MethodNotAllowedHandler = func(w http.ResponseWriter, r *http.Request, _ map[string]httptreemux.HandlerFunc) {
-		render.New().JSON(w, http.StatusNotFound, map[string]interface{}{"error": "not found"})
+		render.New().JSON(w, http.StatusNotFound, map[string]any{"error": "not found"})
 	}
 	router.NotFoundHandler = func(w http.ResponseWriter, r *http.Request) {
-		render.New().JSON(w, http.StatusNotFound, map[string]interface{}{"error": "not found"})
+		render.New().JSON(w, http.StatusNotFound, map[string]any{"error": "not found"})
 	}
-	router.PanicHandler = func(w http.ResponseWriter, r *http.Request, rcv interface{}) {
-		render.New().JSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "server error"})
+	router.PanicHandler = func(w http.ResponseWriter, r *http.Request, rcv any) {
+		render.New().JSON(w, http.StatusInternalServerError, map[string]any{"error": "server error"})
 	}
 }
 
