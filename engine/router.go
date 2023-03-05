@@ -54,6 +54,7 @@ func (r *Router) create(rid, uid, callback string, offer webrtc.SessionDescripti
 	se.SetNAT1To1IPs([]string{r.engine.IP}, webrtc.ICECandidateTypeHost)
 	se.SetICETimeouts(10*time.Second, 30*time.Second, 2*time.Second)
 	se.SetEphemeralUDPPortRange(r.engine.PortMin, r.engine.PortMax)
+	se.SetDTLSInsecureSkipHelloVerify(true)
 	se.SetReceiveMTU(8192)
 
 	me := &webrtc.MediaEngine{}
