@@ -1,6 +1,6 @@
 module github.com/MixinNetwork/kraken
 
-go 1.19
+go 1.20
 
 replace github.com/vmihailenco/msgpack/v4 => github.com/MixinNetwork/msgpack/v4 v4.3.13
 
@@ -13,7 +13,7 @@ require (
 	github.com/pion/interceptor v0.1.17
 	github.com/pion/rtp v1.7.13
 	github.com/pion/sdp/v2 v2.4.0
-	github.com/pion/webrtc/v3 v3.2.8
+	github.com/pion/webrtc/v3 v3.2.9
 	github.com/unrolled/render v1.6.0
 )
 
@@ -35,9 +35,8 @@ require (
 	github.com/pion/stun v0.6.0 // indirect
 	github.com/pion/transport/v2 v2.2.1 // indirect
 	github.com/pion/turn/v2 v2.1.0 // indirect
-	github.com/pion/udp/v2 v2.0.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/stretchr/testify v1.8.3 // indirect
+	github.com/stretchr/testify v1.8.4 // indirect
 	golang.org/x/crypto v0.9.0 // indirect
 	golang.org/x/net v0.10.0 // indirect
 	golang.org/x/sys v0.8.0 // indirect
