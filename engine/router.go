@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/MixinNetwork/mixin/logger"
-	uuid "github.com/gofrs/uuid/v5"
+	"github.com/gofrs/uuid/v5"
 	"github.com/pion/interceptor"
 	"github.com/pion/sdp/v2"
 	"github.com/pion/webrtc/v3"
