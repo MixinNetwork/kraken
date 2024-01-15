@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dimfeld/httptreemux"
+	"github.com/dimfeld/httptreemux/v5"
 	"github.com/gorilla/handlers"
 	"github.com/unrolled/render"
 )
@@ -16,9 +16,9 @@ type R struct {
 }
 
 type Call struct {
-	Id     string        `json:"id"`
-	Method string        `json:"method"`
-	Params []any `json:"params"`
+	Id     string `json:"id"`
+	Method string `json:"method"`
+	Params []any  `json:"params"`
 }
 
 type Render struct {
