@@ -108,12 +108,13 @@ func (peer *Peer) handle() {
 	})
 	peer.pc.OnTrack(func(rt *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		logger.Printf("HandlePeer(%s) OnTrack(%d, %d)\n", peer.id(), rt.PayloadType(), rt.SSRC())
-		if peer.track != nil || (111 != rt.PayloadType() && 109 != rt.PayloadType()) {
-			return
-		}
 		peer.connected <- true
 
 		peer.Lock()
+		rpt := rt.PayloadType()
+		if peer.track != nil || (rpt != 111 && rpt != 109) {
+			return
+		}
 		lt, err := webrtc.NewTrackLocalStaticRTP(rt.Codec().RTPCodecCapability, peer.cid, peer.uid)
 		if err != nil {
 			panic(err)
