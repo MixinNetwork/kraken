@@ -110,27 +110,36 @@ func (peer *Peer) handle() {
 		logger.Printf("HandlePeer(%s) OnTrack(%d, %d)\n", peer.id(), rt.PayloadType(), rt.SSRC())
 		peer.connected <- true
 
-		peer.Lock()
-		rpt := rt.PayloadType()
-		if peer.track != nil || (rpt != 111 && rpt != 109) {
-			return
-		}
-		lt, err := webrtc.NewTrackLocalStaticRTP(rt.Codec().RTPCodecCapability, peer.cid, peer.uid)
+		err := peer.addTrackFromRemote(rt)
 		if err != nil {
 			panic(err)
 		}
-		peer.track = lt
-		peer.Unlock()
 
 		err = peer.callbackOnTrack()
 		if err != nil {
 			logger.Printf("HandlePeer(%s) OnTrack(%d, %d) callback error %v\n", peer.id(), rt.PayloadType(), rt.SSRC(), err)
 		} else {
-			err = peer.copyTrack(rt, lt)
+			err = peer.copyTrack(rt, peer.track)
 			logger.Printf("HandlePeer(%s) OnTrack(%d, %d) end with %v\n", peer.id(), rt.PayloadType(), rt.SSRC(), err)
 		}
 		peer.Close()
 	})
+}
+
+func (peer *Peer) addTrackFromRemote(rt *webrtc.TrackRemote) error {
+	peer.Lock()
+	defer peer.Unlock()
+
+	rpt := rt.PayloadType()
+	if peer.track != nil || (rpt != 111 && rpt != 109) {
+		return nil
+	}
+	lt, err := webrtc.NewTrackLocalStaticRTP(rt.Codec().RTPCodecCapability, peer.cid, peer.uid)
+	if err != nil {
+		return err
+	}
+	peer.track = lt
+	return nil
 }
 
 func (peer *Peer) callbackOnTrack() error {
