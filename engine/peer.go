@@ -17,15 +17,15 @@ import (
 
 const (
 	peerTrackClosedId          = "CLOSED"
-	peerTrackConnectionTimeout = 10 * time.Second
-	peerTrackReadTimeout       = 30 * time.Second
+	peerTrackConnectionTimeout = 60 * time.Second
+	peerTrackReadTimeout       = 60 * time.Second
 )
 
 var clbkClient *http.Client
 
 func init() {
 	clbkClient = &http.Client{
-		Timeout: 5 * time.Second,
+		Timeout: 30 * time.Second,
 	}
 }
 
@@ -108,12 +108,14 @@ func (peer *Peer) handle() {
 	})
 	peer.pc.OnTrack(func(rt *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		logger.Printf("HandlePeer(%s) OnTrack(%d, %d)\n", peer.id(), rt.PayloadType(), rt.SSRC())
-		peer.connected <- true
-
-		err := peer.addTrackFromRemote(rt)
+		added, err := peer.addTrackFromRemote(rt)
 		if err != nil {
 			panic(err)
 		}
+		if !added {
+			return
+		}
+		peer.connected <- true
 
 		err = peer.callbackOnTrack()
 		if err != nil {
@@ -126,20 +128,24 @@ func (peer *Peer) handle() {
 	})
 }
 
-func (peer *Peer) addTrackFromRemote(rt *webrtc.TrackRemote) error {
+func (peer *Peer) addTrackFromRemote(rt *webrtc.TrackRemote) (bool, error) {
 	peer.Lock()
 	defer peer.Unlock()
 
+	if peer.cid == peerTrackClosedId {
+		return false, nil
+	}
+
 	rpt := rt.PayloadType()
 	if peer.track != nil || (rpt != 111 && rpt != 109) {
-		return nil
+		return false, nil
 	}
 	lt, err := webrtc.NewTrackLocalStaticRTP(rt.Codec().RTPCodecCapability, peer.cid, peer.uid)
 	if err != nil {
-		return err
+		return false, err
 	}
 	peer.track = lt
-	return nil
+	return true, nil
 }
 
 func (peer *Peer) callbackOnTrack() error {
