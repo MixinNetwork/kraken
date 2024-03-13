@@ -326,8 +326,7 @@ func (r *Router) subscribe(rid, uid, cid string) (*webrtc.SessionDescription, er
 			ec <- buildError(ErrorServerSetLocalOffer, err)
 			return
 		}
-		c := <-gatherComplete
-		gc <- c
+		gc <- (<-gatherComplete)
 	}()
 
 	select {

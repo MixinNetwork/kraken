@@ -1,6 +1,6 @@
 [engine]
-# the network interface to bind
-interface = "eth0"
+# the network interface to bind, e.g.: 'eth0'
+interface = ""
 # the IP address to bind, empty allows the engine to get it from interface
 address = ""
 log-level = 10
