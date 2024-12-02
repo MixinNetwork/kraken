@@ -82,11 +82,7 @@ func (engine *Engine) Loop() {
 	}
 }
 
-func getIPFromInterface(iname string, addr string) (string, error) {
-	if addr != "" {
-		return addr, nil
-	}
-
+func getSpecificIPFromInterface(iname string) (string, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return "", err
@@ -110,6 +106,23 @@ func getIPFromInterface(iname string, addr string) (string, error) {
 	}
 
 	return "", fmt.Errorf("no address for interface %s", iname)
+}
+
+func getIPFromInterface(iname string, addr string) (string, error) {
+	if addr != "" {
+		return addr, nil
+	}
+	if iname != "" {
+		return getSpecificIPFromInterface(iname)
+	}
+
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	return localAddr.IP.String(), nil
 }
 
 type pmap struct {
