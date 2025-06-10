@@ -8,8 +8,8 @@ require (
 	github.com/gofrs/uuid/v5 v5.3.2
 	github.com/gorilla/handlers v1.5.2
 	github.com/pelletier/go-toml v1.9.5
-	github.com/pion/interceptor v0.1.38
-	github.com/pion/rtp v1.8.16
+	github.com/pion/interceptor v0.1.39
+	github.com/pion/rtp v1.8.18
 	github.com/pion/sdp/v2 v2.4.0
 	github.com/pion/webrtc/v4 v4.1.1
 	github.com/unrolled/render v1.7.0
