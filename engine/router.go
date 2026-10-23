@@ -9,7 +9,7 @@ import (
 	"github.com/MixinNetwork/mixin/logger"
 	"github.com/gofrs/uuid/v5"
 	"github.com/pion/interceptor"
-	"github.com/pion/sdp/v2"
+	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -72,35 +72,38 @@ func (r *Router) create(rid, uid, callback string, listenOnly bool, offer webrtc
 	se.SetLite(true)
 	se.EnableSCTPZeroChecksum(true)
 	se.SetInterfaceFilter(func(in string) bool { return in == r.engine.Interface })
-	se.SetNAT1To1IPs([]string{r.engine.IP}, webrtc.ICECandidateTypeHost)
+	err := se.SetICEAddressRewriteRules(webrtc.ICEAddressRewriteRule{
+		External:        []string{r.engine.IP},
+		AsCandidateType: webrtc.ICECandidateTypeHost,
+		Mode:            webrtc.ICEAddressRewriteReplace,
+	})
+	if err != nil {
+		return nil, err
+	}
 	se.SetICETimeouts(10*time.Second, 20*time.Second, 2*time.Second)
 	se.SetDTLSInsecureSkipHelloVerify(true)
 	se.SetReceiveMTU(8192)
-	err := se.SetEphemeralUDPPortRange(r.engine.PortMin, r.engine.PortMax)
+	err = se.SetEphemeralUDPPortRange(r.engine.PortMin, r.engine.PortMax)
 	if err != nil {
 		return nil, err
 	}
 
 	me := &webrtc.MediaEngine{}
 	opusChrome := webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:     webrtc.MimeTypeOpus,
-			ClockRate:    48000,
-			Channels:     2,
-			SDPFmtpLine:  "minptime=10;useinbandfec=1",
-			RTCPFeedback: nil,
-		},
-		PayloadType: 111,
+		MimeType:     webrtc.MimeTypeOpus,
+		ClockRate:    48000,
+		Channels:     2,
+		SDPFmtpLine:  "minptime=10;useinbandfec=1",
+		RTCPFeedback: nil,
+		PayloadType:  111,
 	}
 	opusFirefox := webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:     webrtc.MimeTypeOpus,
-			ClockRate:    48000,
-			Channels:     2,
-			SDPFmtpLine:  "minptime=10;useinbandfec=1",
-			RTCPFeedback: nil,
-		},
-		PayloadType: 109,
+		MimeType:     webrtc.MimeTypeOpus,
+		ClockRate:    48000,
+		Channels:     2,
+		SDPFmtpLine:  "minptime=10;useinbandfec=1",
+		RTCPFeedback: nil,
+		PayloadType:  109,
 	}
 	err = me.RegisterCodec(opusChrome, webrtc.RTPCodecTypeAudio)
 	if err != nil {
@@ -165,7 +168,7 @@ func (r *Router) publish(rid, uid string, jsep string, limit int, callback strin
 	}
 
 	parser := sdp.SessionDescription{}
-	err = parser.Unmarshal([]byte(offer.SDP))
+	err = parser.UnmarshalString(offer.SDP)
 	if err != nil {
 		return "", nil, buildError(ErrorInvalidSDP, err)
 	}
@@ -222,7 +225,7 @@ func (r *Router) restart(rid, uid, cid string, jsep string) (*webrtc.SessionDesc
 		return nil, buildError(ErrorInvalidSDP, fmt.Errorf("invalid sdp type %s", offer.Type))
 	}
 	parser := sdp.SessionDescription{}
-	err = parser.Unmarshal([]byte(offer.SDP))
+	err = parser.UnmarshalString(offer.SDP)
 	if err != nil {
 		return nil, buildError(ErrorInvalidSDP, err)
 	}
@@ -388,7 +391,7 @@ func (r *Router) answer(rid, uid, cid string, jsep string) error {
 	}
 
 	parser := sdp.SessionDescription{}
-	err = parser.Unmarshal([]byte(answer.SDP))
+	err = parser.UnmarshalString(answer.SDP)
 	if err != nil {
 		return buildError(ErrorInvalidSDP, err)
 	}

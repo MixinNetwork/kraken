@@ -1,7 +1,7 @@
 package engine
 
 import (
-	"io/ioutil"
+	"os"
 
 	"github.com/MixinNetwork/mixin/logger"
 	"github.com/pelletier/go-toml"
@@ -26,7 +26,7 @@ type Configuration struct {
 
 func Setup(path string) (*Configuration, error) {
 	logger.Printf("Setup(%s)\n", path)
-	f, err := ioutil.ReadFile(path)
+	f, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
