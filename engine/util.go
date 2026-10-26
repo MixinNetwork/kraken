@@ -21,10 +21,22 @@ func waitForCompletion(done <-chan struct{}, duration time.Duration) error {
 }
 
 func setLocalDescription(pc *webrtc.PeerConnection, desc webrtc.SessionDescription, timeout time.Duration) error {
+	code := ErrorServerSetLocalAnswer
+	if desc.Type == webrtc.SDPTypeOffer {
+		code = ErrorServerSetLocalOffer
+	}
 	gatherComplete := webrtc.GatheringCompletePromise(pc)
 	err := pc.SetLocalDescription(desc)
 	if err != nil {
+		return buildError(code, err)
+	}
+	// Preserve the public timeout error instead of wrapping it as an SDP error.
+	if err := waitForCompletion(gatherComplete, timeout); err != nil {
 		return err
 	}
-	return waitForCompletion(gatherComplete, timeout)
+	// Pion also completes the gathering promise when the connection closes.
+	if pc.SignalingState() == webrtc.SignalingStateClosed {
+		return buildError(code, webrtc.ErrConnectionClosed)
+	}
+	return nil
 }

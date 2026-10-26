@@ -149,7 +149,7 @@ func (r *Router) create(rid, uid, callback string, listenOnly bool, offer webrtc
 	err = setLocalDescription(pc, answer, peerTrackConnectionTimeout)
 	if err != nil {
 		pc.Close()
-		return nil, buildError(ErrorServerSetLocalAnswer, err)
+		return nil, err
 	}
 
 	peer := BuildPeer(rid, uid, pc, callback, listenOnly)
@@ -192,6 +192,13 @@ func (r *Router) publish(rid, uid string, jsep string, limit int, callback strin
 	if err != nil {
 		return "", nil, err
 	}
+	return r.publishPeer(peer, limit)
+}
+
+func (r *Router) publishPeer(peer *Peer, limit int) (string, *webrtc.SessionDescription, error) {
+	// Once visible in the room, the peer can negotiate subscriptions while we
+	// wait for its predecessor to close. Keep the answer to the initial offer.
+	answer := peer.pc.LocalDescription()
 	old, err := r.engine.addPeer(peer, limit)
 	if err != nil {
 		_ = peer.CloseWithTimeout()
@@ -200,7 +207,7 @@ func (r *Router) publish(rid, uid string, jsep string, limit int, callback strin
 	if old != nil {
 		_ = old.CloseWithTimeout()
 	}
-	return peer.cid, peer.pc.LocalDescription(), nil
+	return peer.cid, answer, nil
 }
 
 func (r *Router) restart(rid, uid, cid string, jsep string) (*webrtc.SessionDescription, error) {
@@ -235,11 +242,7 @@ func (r *Router) restart(rid, uid, cid string, jsep string) (*webrtc.SessionDesc
 		if err != nil {
 			return buildError(ErrorServerCreateAnswer, err)
 		}
-		err = setLocalDescription(peer.pc, answer, peerTrackConnectionTimeout)
-		if err != nil {
-			return buildError(ErrorServerSetLocalAnswer, err)
-		}
-		return nil
+		return setLocalDescription(peer.pc, answer, peerTrackConnectionTimeout)
 	}()
 
 	if err != nil {
@@ -288,25 +291,25 @@ func (r *Router) subscribe(rid, uid, cid string) (*webrtc.SessionDescription, er
 		return nil, err
 	}
 
-	err = peer.doSubscribe(room)
+	desc, err := peer.doSubscribe(room)
 	logger.Printf("peer.doSubscribe(%s, %s, %s) => %v", rid, uid, cid, err)
 	if err != nil {
 		_ = peer.CloseWithTimeout()
 		return nil, err
 	}
-	return peer.pc.LocalDescription(), nil
+	return desc, nil
 }
 
-func (peer *Peer) doSubscribe(room *pmap) error {
+func (peer *Peer) doSubscribe(room *pmap) (*webrtc.SessionDescription, error) {
 	peer.signalingMu.Lock()
 	defer peer.signalingMu.Unlock()
 	if peer.isClosed() {
-		return buildError(ErrorPeerClosed, fmt.Errorf("peer %s closed in %s", peer.uid, peer.rid))
+		return nil, buildError(ErrorPeerClosed, fmt.Errorf("peer %s closed in %s", peer.uid, peer.rid))
 	}
 	// Finish the outstanding offer before applying subscription changes. A
 	// repeated subscribe returns that offer so the client can still answer it.
 	if peer.pc.SignalingState() == webrtc.SignalingStateHaveLocalOffer {
-		return nil
+		return peer.pc.LocalDescription(), nil
 	}
 	peers := room.PeersCopy()
 
@@ -316,7 +319,7 @@ func (peer *Peer) doSubscribe(room *pmap) error {
 			continue
 		}
 		if err := peer.pc.RemoveTrack(old.rtp); err != nil {
-			return fmt.Errorf("pc.RemoveTrack(%s, %s) => %w", uid, peer.id(), err)
+			return nil, fmt.Errorf("pc.RemoveTrack(%s, %s) => %w", uid, peer.id(), err)
 		}
 		delete(peer.publishers, uid)
 		renegotiate = true
@@ -327,20 +330,21 @@ func (peer *Peer) doSubscribe(room *pmap) error {
 		}
 		res, err := peer.connectPublisher(pub)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		renegotiate = renegotiate || res
 	}
 	if renegotiate {
 		offer, err := peer.pc.CreateOffer(nil)
 		if err != nil {
-			return buildError(ErrorServerCreateOffer, err)
+			return nil, buildError(ErrorServerCreateOffer, err)
 		}
 		if err := setLocalDescription(peer.pc, offer, peerTrackReadTimeout); err != nil {
-			return buildError(ErrorServerSetLocalOffer, err)
+			return nil, err
 		}
 	}
-	return nil
+	// Capture the response before another signaling operation can replace it.
+	return peer.pc.LocalDescription(), nil
 }
 
 // connectPublisher requires sub.signalingMu to be held.
