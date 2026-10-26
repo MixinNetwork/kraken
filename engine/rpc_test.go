@@ -33,6 +33,9 @@ func TestPublishOptionalParameters(t *testing.T) {
 		{"three arguments", nil, ErrorInvalidSDP},
 		{"five arguments", []any{1, "https://example.invalid/callback"}, ErrorInvalidSDP},
 		{"six arguments", []any{1, "https://example.invalid/callback", true}, ErrorInvalidSDP},
+		{"five arguments without callback", []any{1, ""}, ErrorInvalidSDP},
+		{"six arguments without callback", []any{1, "", false}, ErrorInvalidSDP},
+		{"listen-only without callback", []any{1, "", true}, ErrorInvalidSDP},
 		{"invalid limit", []any{"invalid", "https://example.invalid/callback", true}, ErrorInvalidParams},
 		{"invalid callback type", []any{1, 123, true}, ErrorInvalidParams},
 		{"invalid callback URL", []any{1, "http://example.invalid/callback", true}, ErrorInvalidParams},
@@ -55,11 +58,23 @@ func TestPublishPreservesLimitWithListenOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	rpc := &R{router: NewRouter(engine)}
-	params := []any{"room", "new-user", testDescription("offer"), 1, "https://example.invalid/callback"}
-	_, _, err = rpc.publish(params)
-	assertErrorCode(t, err, ErrorRoomFull)
-	_, _, err = rpc.publish(append(params, true))
-	assertErrorCode(t, err, ErrorRoomFull)
+	for _, tc := range []struct {
+		name     string
+		callback string
+	}{
+		{"with callback", "https://example.invalid/callback"},
+		{"without callback", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			params := []any{"room", "new-user", testDescription("offer"), 1, tc.callback}
+			_, _, err := rpc.publish(params)
+			assertErrorCode(t, err, ErrorRoomFull)
+			for _, listenOnly := range []bool{false, true} {
+				_, _, err := rpc.publish(append(params, listenOnly))
+				assertErrorCode(t, err, ErrorRoomFull)
+			}
+		})
+	}
 }
 
 func TestRenderErrorPreservesDetails(t *testing.T) {

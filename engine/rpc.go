@@ -234,7 +234,8 @@ func (r *R) publish(params []any) (string, *webrtc.SessionDescription, error) {
 		if !ok {
 			return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid callback type %v", params[4]))
 		}
-		if !strings.HasPrefix(cbk, "https://") {
+		// An empty callback disables the optional on-track webhook.
+		if cbk != "" && !strings.HasPrefix(cbk, "https://") {
 			return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid callback value %s", cbk))
 		}
 		callback = cbk
