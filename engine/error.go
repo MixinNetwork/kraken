@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 )
 
@@ -22,6 +23,7 @@ const (
 	ErrorServerCreateAnswer      = 5003006
 	ErrorServerSetLocalAnswer    = 5003007
 	ErrorServerSetRemoteAnswer   = 5003008
+	ErrorServerInternal          = 5003998
 	ErrorServerTimeout           = 5003999
 )
 
@@ -34,6 +36,22 @@ type Error struct {
 func (e Error) Error() string {
 	b, _ := json.Marshal(e)
 	return string(b)
+}
+
+func errorResponse(err error) Error {
+	var value Error
+	if errors.As(err, &value) {
+		return value
+	}
+	var pointer *Error
+	if errors.As(err, &pointer) {
+		return *pointer
+	}
+	return Error{
+		Status:      http.StatusInternalServerError,
+		Code:        ErrorServerInternal,
+		Description: err.Error(),
+	}
 }
 
 func buildError(code int, err error) error {

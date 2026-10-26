@@ -58,7 +58,7 @@ func (r *Render) RenderData(data any) {
 }
 
 func (r *Render) RenderError(err error) {
-	body := map[string]any{"error": err}
+	body := map[string]any{"error": errorResponse(err)}
 	if r.call != nil {
 		body["id"] = r.call.Id
 	}
@@ -157,7 +157,7 @@ func (impl *R) handle(w http.ResponseWriter, r *http.Request, _ map[string]strin
 			renderer.RenderData(map[string]string{})
 		}
 	default:
-		renderer.RenderError(fmt.Errorf("invalid method %s", call.Method))
+		renderer.RenderError(buildError(ErrorInvalidParams, fmt.Errorf("invalid method %s", call.Method)))
 	}
 }
 
@@ -207,7 +207,7 @@ func (r *R) mute(params []any) (map[string]any, error) {
 }
 
 func (r *R) publish(params []any) (string, *webrtc.SessionDescription, error) {
-	if len(params) < 3 {
+	if len(params) != 3 && len(params) != 5 && len(params) != 6 {
 		return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid params count %d", len(params)))
 	}
 	rid, ok := params[0].(string)
@@ -224,7 +224,7 @@ func (r *R) publish(params []any) (string, *webrtc.SessionDescription, error) {
 	}
 	var limit int
 	var callback string
-	if len(params) == 5 {
+	if len(params) >= 5 {
 		i, err := strconv.ParseInt(fmt.Sprint(params[3]), 10, 32)
 		if err != nil {
 			return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid limit type %v %v", params[3], err))
@@ -241,7 +241,11 @@ func (r *R) publish(params []any) (string, *webrtc.SessionDescription, error) {
 	}
 	var listenOnly bool
 	if len(params) == 6 {
-		listenOnly, _ = strconv.ParseBool(fmt.Sprint(params[5]))
+		var err error
+		listenOnly, err = strconv.ParseBool(fmt.Sprint(params[5]))
+		if err != nil {
+			return "", nil, buildError(ErrorInvalidParams, fmt.Errorf("invalid listenOnly value %v: %w", params[5], err))
+		}
 	}
 	return r.router.publish(rid, uid, sdp, limit, callback, listenOnly)
 }

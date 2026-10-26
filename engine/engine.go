@@ -31,10 +31,14 @@ type Engine struct {
 	PortMin   uint16
 	PortMax   uint16
 
+	stateMu   sync.RWMutex
 	peakPeers int
 	peakRooms int
 	state     *State
 	rooms     *rmap
+	// Retired objects are counted without keeping their connections in memory.
+	closedPeers int
+	closedRooms int
 }
 
 func BuildEngine(conf *Configuration) (*Engine, error) {
@@ -57,49 +61,53 @@ func (engine *Engine) Loop(version string) {
 	bootedAt := time.Now()
 
 	for {
-		engine.rooms.RLock()
-		rooms := make(map[string]*pmap, len(engine.rooms.m))
-		for k, v := range engine.rooms.m {
-			rooms[k] = v
-		}
-		engine.rooms.RUnlock()
-
-		state := &State{
-			Version:   version,
-			BootedAt:  bootedAt,
-			UpdatedAt: time.Now(),
-		}
-		for _, pm := range rooms {
-			peers := pm.PeersCopy()
-			ap, cp := 0, 0
-			for _, p := range peers {
-				if p.cid == peerTrackClosedId {
-					cp += 1
-				} else {
-					ap += 1
-				}
-			}
-			state.ActivePeers += ap
-			state.ClosedPeers += cp
-			if ap > 0 {
-				state.ActiveRooms += 1
-				logger.Printf("room#%s with %d active and %d closed peers", pm.id, ap, cp)
-			} else {
-				state.ClosedRooms += 1
-			}
-		}
-		if state.ActiveRooms > engine.peakRooms {
-			engine.peakRooms = state.ActiveRooms
-		}
-		if state.ActivePeers > engine.peakPeers {
-			engine.peakPeers = state.ActivePeers
-		}
-		state.PeakPeers = engine.peakPeers
-		state.PeakRooms = engine.peakRooms
-		engine.state = state
-
+		engine.updateState(version, bootedAt)
 		time.Sleep(engineStateLoopPeriod)
 	}
+}
+
+func (engine *Engine) updateState(version string, bootedAt time.Time) {
+	state := &State{
+		Version:   version,
+		BootedAt:  bootedAt,
+		UpdatedAt: time.Now(),
+	}
+	// Insertion and cleanup use the same lock order: rooms, room, peer.
+	engine.rooms.Lock()
+	for rid, room := range engine.rooms.m {
+		room.Lock()
+		for uid, peer := range room.m {
+			if peer.isClosed() {
+				delete(room.m, uid)
+				engine.closedPeers++
+			}
+		}
+		active := len(room.m)
+		room.Unlock()
+		if active == 0 {
+			delete(engine.rooms.m, rid)
+			engine.closedRooms++
+		} else {
+			state.ActiveRooms++
+			state.ActivePeers += active
+			logger.Printf("room#%s with %d active peers", rid, active)
+		}
+	}
+	state.ClosedPeers = engine.closedPeers
+	state.ClosedRooms = engine.closedRooms
+	engine.rooms.Unlock()
+
+	engine.stateMu.Lock()
+	defer engine.stateMu.Unlock()
+	if state.ActiveRooms > engine.peakRooms {
+		engine.peakRooms = state.ActiveRooms
+	}
+	if state.ActivePeers > engine.peakPeers {
+		engine.peakPeers = state.ActivePeers
+	}
+	state.PeakPeers = engine.peakPeers
+	state.PeakRooms = engine.peakRooms
+	engine.state = state
 }
 
 func getIPFromInterface(iname string, addr string) (string, error) {
@@ -179,6 +187,54 @@ func (engine *Engine) GetRoom(rid string) *pmap {
 	return rm.m[rid]
 }
 
+func (engine *Engine) getPeer(rid, uid, cid string) (*Peer, error) {
+	room := engine.getRoom(rid)
+	if room == nil {
+		return nil, buildError(ErrorPeerNotFound, fmt.Errorf("peer %s not found in %s", uid, rid))
+	}
+	return room.GetPeer(uid, cid)
+}
+
+// addPeer commits a publication atomically with its capacity check. The caller
+// closes a replaced peer after releasing the room locks.
+func (engine *Engine) addPeer(peer *Peer, limit int) (*Peer, error) {
+	engine.rooms.Lock()
+	defer engine.rooms.Unlock()
+	room := engine.rooms.m[peer.rid]
+	if room == nil {
+		room = pmapAllocate(peer.rid)
+		engine.rooms.m[peer.rid] = room
+	}
+	room.Lock()
+	defer room.Unlock()
+	if err := room.checkLimit(peer.uid, limit); err != nil {
+		return nil, err
+	}
+	old := room.m[peer.uid]
+	if old != nil {
+		engine.closedPeers++
+	}
+	room.m[peer.uid] = peer
+	return old, nil
+}
+
+// checkLimit requires the room lock to be held.
+func (room *pmap) checkLimit(uid string, limit int) error {
+	if limit <= 0 {
+		return nil
+	}
+	active := 0
+	for id, peer := range room.m {
+		if id != uid && !peer.isClosed() {
+			active++
+		}
+	}
+	if active >= limit {
+		return buildError(ErrorRoomFull, fmt.Errorf("room full %d", limit))
+	}
+	return nil
+}
+
 func (room *pmap) PeersCopy() map[string]*Peer {
 	room.RLock()
 	defer room.RUnlock()
@@ -202,7 +258,9 @@ func (room *pmap) getPeer(uid, cid string) (*Peer, error) {
 	if peer == nil {
 		return nil, buildError(ErrorPeerNotFound, fmt.Errorf("peer %s not found in %s", uid, room.id))
 	}
-	if peer.cid == peerTrackClosedId {
+	peer.RLock()
+	defer peer.RUnlock()
+	if peer.closed {
 		return nil, buildError(ErrorPeerClosed, fmt.Errorf("peer %s closed in %s", uid, room.id))
 	}
 	if peer.cid != cid {

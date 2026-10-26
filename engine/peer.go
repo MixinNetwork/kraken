@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,7 +17,6 @@ import (
 )
 
 const (
-	peerTrackClosedId          = "CLOSED"
 	peerTrackConnectionTimeout = 20 * time.Second
 	peerTrackReadTimeout       = 5 * time.Second
 )
@@ -36,16 +36,24 @@ type Sender struct {
 
 type Peer struct {
 	sync.RWMutex
-	rid        string
-	uid        string
-	cid        string
-	callback   string
-	listenOnly bool
-	pc         *webrtc.PeerConnection
-	track      *webrtc.TrackLocalStaticRTP
-	publishers map[string]*Sender
-	queue      chan *rtp.Packet
-	connected  chan bool
+	// Signaling and subscriptions are serialized separately from media state, so
+	// subscribing two peers to each other never requires nested peer locks.
+	signalingMu sync.Mutex
+	rid         string
+	uid         string
+	cid         string
+	callback    string
+	listenOnly  bool
+	closed      bool
+	pc          *webrtc.PeerConnection
+	track       *webrtc.TrackLocalStaticRTP
+	publishers  map[string]*Sender
+	queue       chan *rtp.Packet
+	connected   chan struct{}
+	done        chan struct{}
+	closeOnce   sync.Once
+	closeDone   chan struct{}
+	closeErr    error
 }
 
 func BuildPeer(rid, uid string, pc *webrtc.PeerConnection, callback string, listenOnly bool) *Peer {
@@ -60,7 +68,9 @@ func BuildPeer(rid, uid string, pc *webrtc.PeerConnection, callback string, list
 	peer.pc = pc
 	peer.callback = callback
 	peer.listenOnly = listenOnly
-	peer.connected = make(chan bool, 1)
+	peer.connected = make(chan struct{})
+	peer.done = make(chan struct{})
+	peer.closeDone = make(chan struct{})
 	peer.queue = make(chan *rtp.Packet, 8)
 	peer.publishers = make(map[string]*Sender)
 	peer.handle()
@@ -73,24 +83,32 @@ func (p *Peer) id() string {
 
 func (p *Peer) CloseWithTimeout() error {
 	logger.Printf("PeerClose(%s) now\n", p.id())
-	p.Lock()
-	defer p.Unlock()
+	p.closeOnce.Do(func() {
+		p.Lock()
+		p.track = nil
+		p.closed = true
+		close(p.done)
+		p.Unlock()
 
-	err := lockRunWithTimeout(func() error {
-		return p.close()
-	}, peerTrackReadTimeout)
+		// Closing Pion does not mutate our protected state. All callers wait on
+		// the same completion signal, even if an earlier caller timed out.
+		go func() {
+			p.closeErr = p.pc.Close()
+			close(p.closeDone)
+		}()
+	})
+	err := waitForCompletion(p.closeDone, peerTrackReadTimeout)
+	if err == nil {
+		err = p.closeErr
+	}
 	logger.Printf("PeerClose(%s) with %v\n", p.id(), err)
 	return err
 }
 
-func (p *Peer) close() error {
-	if p.cid == peerTrackClosedId {
-		return nil
-	}
-
-	p.track = nil
-	p.cid = peerTrackClosedId
-	return p.pc.Close()
+func (p *Peer) isClosed() bool {
+	p.RLock()
+	defer p.RUnlock()
+	return p.closed
 }
 
 func (peer *Peer) handle() {
@@ -100,6 +118,7 @@ func (peer *Peer) handle() {
 
 		select {
 		case <-peer.connected:
+		case <-peer.done:
 		case <-timer.C:
 			logger.Printf("HandlePeer(%s) OnTrackTimeout()\n", peer.id())
 			_ = peer.CloseWithTimeout()
@@ -117,14 +136,14 @@ func (peer *Peer) handle() {
 	})
 	peer.pc.OnTrack(func(rt *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		logger.Printf("HandlePeer(%s) OnTrack(%s, %d, %d)\n", peer.id(), rt.ID(), rt.PayloadType(), rt.SSRC())
-		added, err := peer.addTrackFromRemote(rt)
+		added, err := peer.addTrack(rt.Codec())
 		if err != nil {
 			panic(err)
 		}
 		if !added {
 			return
 		}
-		peer.connected <- true
+		close(peer.connected)
 
 		err = peer.callbackOnTrack()
 		if err != nil {
@@ -138,19 +157,18 @@ func (peer *Peer) handle() {
 	})
 }
 
-func (peer *Peer) addTrackFromRemote(rt *webrtc.TrackRemote) (bool, error) {
+func (peer *Peer) addTrack(codec webrtc.RTPCodecParameters) (bool, error) {
 	peer.Lock()
 	defer peer.Unlock()
 
-	if peer.cid == peerTrackClosedId {
+	if peer.closed {
 		return false, nil
 	}
 
-	rpt := rt.PayloadType()
-	if peer.track != nil || (rpt != 111 && rpt != 109) {
+	if peer.track != nil || !strings.EqualFold(codec.MimeType, webrtc.MimeTypeOpus) {
 		return false, nil
 	}
-	lt, err := webrtc.NewTrackLocalStaticRTP(rt.Codec().RTPCodecCapability, peer.cid, peer.uid)
+	lt, err := webrtc.NewTrackLocalStaticRTP(codec.RTPCodecCapability, peer.cid, peer.uid)
 	if err != nil {
 		return false, err
 	}
@@ -200,7 +218,11 @@ func (peer *Peer) copyTrack(src *webrtc.TrackRemote) error {
 				logger.Verbosef("copyTrack(%s) error %s\n", peer.id(), err.Error())
 				return
 			}
-			peer.queue <- pkt
+			select {
+			case peer.queue <- pkt:
+			case <-peer.done:
+				return
+			}
 		}
 	}()
 
@@ -217,21 +239,27 @@ func (peer *Peer) consumeQueue() error {
 	defer timer.Stop()
 
 	select {
+	case <-peer.done:
+		return fmt.Errorf("peer %s closed", peer.uid)
 	case pkt, ok := <-peer.queue:
 		if !ok {
 			return fmt.Errorf("peer %s queue closed", peer.uid)
 		}
-		track := peer.track
+		peer.RLock()
+		track, listenOnly := peer.track, peer.listenOnly
+		peer.RUnlock()
 		if track == nil {
 			return fmt.Errorf("peer %s closed", peer.uid)
 		}
-		if peer.listenOnly {
+		if listenOnly {
 			// FIXME make real silent opus packet
 			pkt.Payload = make([]byte, len(pkt.Payload))
 		}
 		err := track.WriteRTP(pkt)
 		if err != nil {
-			return fmt.Errorf("peer %s track write %v", peer.uid, err)
+			// WriteRTP already forwards to the healthy subscribers. A failed
+			// subscriber must not terminate this publisher's media loop.
+			logger.Verbosef("peer %s subscriber track write: %v", peer.uid, err)
 		}
 	case <-timer.C:
 		return fmt.Errorf("peer %s track read timeout", peer.uid)

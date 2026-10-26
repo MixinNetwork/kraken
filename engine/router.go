@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/MixinNetwork/mixin/logger"
-	"github.com/gofrs/uuid/v5"
 	"github.com/pion/interceptor"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
@@ -22,49 +21,55 @@ func NewRouter(engine *Engine) *Router {
 }
 
 func (r *Router) info() any {
-	r.engine.rooms.RLock()
-	defer r.engine.rooms.RUnlock()
+	r.engine.stateMu.RLock()
+	defer r.engine.stateMu.RUnlock()
 
 	return r.engine.state
 }
 
 func (r *Router) list(rid string) ([]map[string]any, error) {
-	room := r.engine.GetRoom(rid)
-	peers := room.PeersCopy()
 	list := make([]map[string]any, 0)
+	room := r.engine.getRoom(rid)
+	if room == nil {
+		return list, nil
+	}
+	peers := room.PeersCopy()
 	for _, p := range peers {
-		cid := uuid.FromStringOrNil(p.cid)
-		if cid.String() == uuid.Nil.String() {
-			continue
+		p.RLock()
+		if !p.closed {
+			list = append(list, map[string]any{
+				"id":    p.uid,
+				"track": p.cid,
+				"mute":  p.listenOnly,
+			})
 		}
-		list = append(list, map[string]any{
-			"id":    p.uid,
-			"track": cid.String(),
-			"mute":  p.listenOnly,
-		})
+		p.RUnlock()
 	}
 	return list, nil
 }
 
 func (r *Router) mute(rid, uid string) map[string]any {
-	room := r.engine.GetRoom(rid)
-	peers := room.PeersCopy()
-	for _, p := range peers {
-		if p.uid != uid {
-			continue
-		}
-		cid := uuid.FromStringOrNil(p.cid)
-		if cid.String() == uuid.Nil.String() {
-			continue
-		}
-		p.listenOnly = !p.listenOnly
-		return map[string]any{
-			"id":    p.uid,
-			"track": cid.String(),
-			"mute":  p.listenOnly,
-		}
+	room := r.engine.getRoom(rid)
+	if room == nil {
+		return nil
 	}
-	return nil
+	room.RLock()
+	p := room.m[uid]
+	room.RUnlock()
+	if p == nil {
+		return nil
+	}
+	p.Lock()
+	defer p.Unlock()
+	if p.closed {
+		return nil
+	}
+	p.listenOnly = !p.listenOnly
+	return map[string]any{
+		"id":    p.uid,
+		"track": p.cid,
+		"mute":  p.listenOnly,
+	}
 }
 
 func (r *Router) create(rid, uid, callback string, listenOnly bool, offer webrtc.SessionDescription) (*Peer, error) {
@@ -141,7 +146,7 @@ func (r *Router) create(rid, uid, callback string, listenOnly bool, offer webrtc
 		pc.Close()
 		return nil, buildError(ErrorServerCreateAnswer, err)
 	}
-	err = setLocalDescription(pc, answer)
+	err = setLocalDescription(pc, answer, peerTrackConnectionTimeout)
 	if err != nil {
 		pc.Close()
 		return nil, buildError(ErrorServerSetLocalAnswer, err)
@@ -173,45 +178,33 @@ func (r *Router) publish(rid, uid string, jsep string, limit int, callback strin
 		return "", nil, buildError(ErrorInvalidSDP, err)
 	}
 
-	room := r.engine.GetRoom(rid)
-	if limit > 0 {
-		peers := room.PeersCopy()
-		for i, p := range peers {
-			cid := uuid.FromStringOrNil(p.cid)
-			if cid.String() == uuid.Nil.String() || uid == i {
-				continue
-			}
-			limit--
-		}
-		if limit <= 0 {
-			return "", nil, buildError(ErrorRoomFull, fmt.Errorf("room full %d", limit))
+	// Reject an already full room before creating a connection, then check
+	// again when committing because other publications may finish meanwhile.
+	if room := r.engine.getRoom(rid); room != nil {
+		room.RLock()
+		err = room.checkLimit(uid, limit)
+		room.RUnlock()
+		if err != nil {
+			return "", nil, err
 		}
 	}
-
-	room.Lock()
-	defer room.Unlock()
-
-	var peer *Peer
-	err = lockRunWithTimeout(func() error {
-		pub, err := r.create(rid, uid, callback, listenOnly, offer)
-		peer = pub
-		return err
-	}, peerTrackConnectionTimeout)
+	peer, err := r.create(rid, uid, callback, listenOnly, offer)
 	if err != nil {
 		return "", nil, err
 	}
-
-	old := room.m[peer.uid]
+	old, err := r.engine.addPeer(peer, limit)
+	if err != nil {
+		_ = peer.CloseWithTimeout()
+		return "", nil, err
+	}
 	if old != nil {
 		_ = old.CloseWithTimeout()
 	}
-	room.m[peer.uid] = peer
 	return peer.cid, peer.pc.LocalDescription(), nil
 }
 
 func (r *Router) restart(rid, uid, cid string, jsep string) (*webrtc.SessionDescription, error) {
-	room := r.engine.GetRoom(rid)
-	peer, err := room.GetPeer(uid, cid)
+	peer, err := r.engine.getPeer(rid, uid, cid)
 	if err != nil {
 		return nil, err
 	}
@@ -230,10 +223,10 @@ func (r *Router) restart(rid, uid, cid string, jsep string) (*webrtc.SessionDesc
 		return nil, buildError(ErrorInvalidSDP, err)
 	}
 
-	peer.Lock()
-	defer peer.Unlock()
+	peer.signalingMu.Lock()
+	defer peer.signalingMu.Unlock()
 
-	err = lockRunWithTimeout(func() error {
+	err = func() error {
 		err := peer.pc.SetRemoteDescription(offer)
 		if err != nil {
 			return buildError(ErrorServerSetRemoteOffer, err)
@@ -242,25 +235,22 @@ func (r *Router) restart(rid, uid, cid string, jsep string) (*webrtc.SessionDesc
 		if err != nil {
 			return buildError(ErrorServerCreateAnswer, err)
 		}
-		err = setLocalDescription(peer.pc, answer)
+		err = setLocalDescription(peer.pc, answer, peerTrackConnectionTimeout)
 		if err != nil {
 			return buildError(ErrorServerSetLocalAnswer, err)
 		}
 		return nil
-	}, peerTrackConnectionTimeout)
+	}()
 
 	if err != nil {
-		_ = lockRunWithTimeout(func() error {
-			return peer.close()
-		}, peerTrackReadTimeout)
+		_ = peer.CloseWithTimeout()
 		return nil, err
 	}
 	return peer.pc.LocalDescription(), nil
 }
 
 func (r *Router) end(rid, uid, cid string) error {
-	room := r.engine.GetRoom(rid)
-	peer, err := room.GetPeer(uid, cid)
+	peer, err := r.engine.getPeer(rid, uid, cid)
 	if err != nil {
 		return err
 	}
@@ -278,106 +268,109 @@ func (r *Router) trickle(rid, uid, cid string, candi string) error {
 		return nil
 	}
 
-	room := r.engine.GetRoom(rid)
-	peer, err := room.GetPeer(uid, cid)
+	peer, err := r.engine.getPeer(rid, uid, cid)
 	if err != nil {
 		return err
 	}
-	peer.Lock()
-	defer peer.Unlock()
+	peer.signalingMu.Lock()
+	defer peer.signalingMu.Unlock()
 
-	return lockRunWithTimeout(func() error {
-		return peer.pc.AddICECandidate(ici)
-	}, peerTrackReadTimeout)
+	return peer.pc.AddICECandidate(ici)
 }
 
 func (r *Router) subscribe(rid, uid, cid string) (*webrtc.SessionDescription, error) {
-	room := r.engine.GetRoom(rid)
-	room.Lock()
-	defer room.Unlock()
-
-	peer, err := room.getPeer(uid, cid)
+	room := r.engine.getRoom(rid)
+	if room == nil {
+		return nil, buildError(ErrorPeerNotFound, fmt.Errorf("peer %s not found in %s", uid, rid))
+	}
+	peer, err := room.GetPeer(uid, cid)
 	if err != nil {
 		return nil, err
 	}
 
-	err = lockRunWithTimeout(func() error {
-		err := peer.doSubscribe(room.m)
-		logger.Printf("peer.doSubscribe(%s, %s, %s) => %v", rid, uid, cid, err)
-		if err != nil {
-			_ = peer.close()
-			return err
-		}
-		return nil
-	}, peerTrackConnectionTimeout)
-
+	err = peer.doSubscribe(room)
+	logger.Printf("peer.doSubscribe(%s, %s, %s) => %v", rid, uid, cid, err)
 	if err != nil {
+		_ = peer.CloseWithTimeout()
 		return nil, err
 	}
 	return peer.pc.LocalDescription(), nil
 }
 
-func (peer *Peer) doSubscribe(peers map[string]*Peer) error {
-	peer.Lock()
-	defer peer.Unlock()
-
-	return lockRunWithTimeout(func() error {
-		var renegotiate bool
-		for _, pub := range peers {
-			if pub.uid == peer.uid {
-				continue
-			}
-
-			res, err := peer.connectPublisher(pub)
-			if err != nil {
-				return err
-			}
-			renegotiate = renegotiate || res
-		}
-		if renegotiate {
-			offer, err := peer.pc.CreateOffer(nil)
-			if err != nil {
-				return buildError(ErrorServerCreateOffer, err)
-			}
-			err = setLocalDescription(peer.pc, offer)
-			if err != nil {
-				return buildError(ErrorServerSetLocalOffer, err)
-			}
-		}
+func (peer *Peer) doSubscribe(room *pmap) error {
+	peer.signalingMu.Lock()
+	defer peer.signalingMu.Unlock()
+	if peer.isClosed() {
+		return buildError(ErrorPeerClosed, fmt.Errorf("peer %s closed in %s", peer.uid, peer.rid))
+	}
+	// Finish the outstanding offer before applying subscription changes. A
+	// repeated subscribe returns that offer so the client can still answer it.
+	if peer.pc.SignalingState() == webrtc.SignalingStateHaveLocalOffer {
 		return nil
-	}, peerTrackReadTimeout)
-}
-
-func (sub *Peer) connectPublisher(pub *Peer) (bool, error) {
-	pub.RLock()
-	defer pub.RUnlock()
+	}
+	peers := room.PeersCopy()
 
 	var renegotiate bool
-	err := lockRunWithTimeout(func() error {
-		old := sub.publishers[pub.uid]
-		if old != nil && (pub.track == nil || old.id != pub.cid) {
-			err := sub.pc.RemoveTrack(old.rtp)
-			if err != nil {
-				return fmt.Errorf("pc.RemoveTrack(%s, %s) => %v", pub.id(), sub.id(), err)
-			}
-			delete(sub.publishers, pub.uid)
-			renegotiate = true
+	for uid, old := range peer.publishers {
+		if peers[uid] != nil {
+			continue
 		}
-		if pub.track != nil && (old == nil || old.id != pub.cid) {
-			sender, err := sub.pc.AddTrack(pub.track)
-			logger.Printf("pc.AddTrack(%s, %s) => %v %v", sub.id(), pub.id(), sender, err)
-			if err != nil {
-				return fmt.Errorf("pc.AddTrack(%s, %s) => %v", sub.id(), pub.id(), err)
-			}
-			if id := sender.Track().ID(); id != pub.cid {
-				return fmt.Errorf("malformed peer and track id %s %s", pub.cid, id)
-			}
-			sub.publishers[pub.uid] = &Sender{id: pub.cid, rtp: sender}
-			renegotiate = true
+		if err := peer.pc.RemoveTrack(old.rtp); err != nil {
+			return fmt.Errorf("pc.RemoveTrack(%s, %s) => %w", uid, peer.id(), err)
 		}
-		return nil
-	}, peerTrackReadTimeout)
-	return renegotiate, err
+		delete(peer.publishers, uid)
+		renegotiate = true
+	}
+	for _, pub := range peers {
+		if pub.uid == peer.uid {
+			continue
+		}
+		res, err := peer.connectPublisher(pub)
+		if err != nil {
+			return err
+		}
+		renegotiate = renegotiate || res
+	}
+	if renegotiate {
+		offer, err := peer.pc.CreateOffer(nil)
+		if err != nil {
+			return buildError(ErrorServerCreateOffer, err)
+		}
+		if err := setLocalDescription(peer.pc, offer, peerTrackReadTimeout); err != nil {
+			return buildError(ErrorServerSetLocalOffer, err)
+		}
+	}
+	return nil
+}
+
+// connectPublisher requires sub.signalingMu to be held.
+func (sub *Peer) connectPublisher(pub *Peer) (bool, error) {
+	pub.RLock()
+	track := pub.track
+	pub.RUnlock()
+
+	var renegotiate bool
+	old := sub.publishers[pub.uid]
+	if old != nil && (track == nil || old.id != pub.cid) {
+		if err := sub.pc.RemoveTrack(old.rtp); err != nil {
+			return false, fmt.Errorf("pc.RemoveTrack(%s, %s) => %w", pub.id(), sub.id(), err)
+		}
+		delete(sub.publishers, pub.uid)
+		renegotiate = true
+	}
+	if track != nil && (old == nil || old.id != pub.cid) {
+		sender, err := sub.pc.AddTrack(track)
+		logger.Printf("pc.AddTrack(%s, %s) => %v %v", sub.id(), pub.id(), sender, err)
+		if err != nil {
+			return false, fmt.Errorf("pc.AddTrack(%s, %s) => %w", sub.id(), pub.id(), err)
+		}
+		if id := sender.Track().ID(); id != pub.cid {
+			return false, fmt.Errorf("malformed peer and track id %s %s", pub.cid, id)
+		}
+		sub.publishers[pub.uid] = &Sender{id: pub.cid, rtp: sender}
+		renegotiate = true
+	}
+	return renegotiate, nil
 }
 
 func (r *Router) answer(rid, uid, cid string, jsep string) error {
@@ -396,26 +389,23 @@ func (r *Router) answer(rid, uid, cid string, jsep string) error {
 		return buildError(ErrorInvalidSDP, err)
 	}
 
-	room := r.engine.GetRoom(rid)
-	peer, err := room.GetPeer(uid, cid)
+	peer, err := r.engine.getPeer(rid, uid, cid)
 	if err != nil {
 		return err
 	}
 
-	peer.Lock()
-	defer peer.Unlock()
+	peer.signalingMu.Lock()
+	defer peer.signalingMu.Unlock()
 
-	return lockRunWithTimeout(func() error {
-		if peer.pc.SignalingState() == webrtc.SignalingStateStable {
-			return nil
-		}
-		err := peer.pc.SetRemoteDescription(answer)
-		logger.Printf("pc.SetRemoteDescription(%s, %s, %s) => %v", rid, uid, cid, err)
-		if err != nil {
-			return buildError(ErrorServerSetRemoteAnswer, err)
-		}
+	if peer.pc.SignalingState() == webrtc.SignalingStateStable {
 		return nil
-	}, peerTrackReadTimeout)
+	}
+	err = peer.pc.SetRemoteDescription(answer)
+	logger.Printf("pc.SetRemoteDescription(%s, %s, %s) => %v", rid, uid, cid, err)
+	if err != nil {
+		return buildError(ErrorServerSetRemoteAnswer, err)
+	}
+	return nil
 }
 
 func validateId(id string) error {

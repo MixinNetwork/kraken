@@ -7,27 +7,24 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
-func lockRunWithTimeout(run func() error, duration time.Duration) error {
+// waitForCompletion bounds a wait without launching background work.
+func waitForCompletion(done <-chan struct{}, duration time.Duration) error {
 	timer := time.NewTimer(duration)
 	defer timer.Stop()
 
-	r := make(chan error)
-	go func() { r <- run() }()
-
 	select {
-	case err := <-r:
-		return err
+	case <-done:
+		return nil
 	case <-timer.C:
 		return buildError(ErrorServerTimeout, fmt.Errorf("timeout after %s", duration))
 	}
 }
 
-func setLocalDescription(pc *webrtc.PeerConnection, desc webrtc.SessionDescription) error {
+func setLocalDescription(pc *webrtc.PeerConnection, desc webrtc.SessionDescription, timeout time.Duration) error {
 	gatherComplete := webrtc.GatheringCompletePromise(pc)
 	err := pc.SetLocalDescription(desc)
 	if err != nil {
 		return err
 	}
-	<-gatherComplete
-	return nil
+	return waitForCompletion(gatherComplete, timeout)
 }

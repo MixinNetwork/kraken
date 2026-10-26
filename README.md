@@ -16,6 +16,8 @@ This is the daemon that load balance all engine instances according to their sys
 
 The engine handles rooms, all peers in a room should connect to the same engine instance. No need to create rooms, a room is just an ID to distribute streams.
 
+The `info` RPC refreshes its status snapshot every 60 seconds and removes closed peers and empty rooms. `closed_peers` and `closed_rooms` are cumulative counts of retired peers and rooms since startup.
+
 Access the engine with HTTP JSON-RPC, some pseudocode to demonstrate the full procedure.
 
 ```javascript
@@ -32,11 +34,11 @@ pc.onicecandidate = ({candidate}) => {
 
 // play the audio stream when available
 pc.ontrack = (event) => {
-  el = document.createElement(event.track.kind)
-  el.id = aid;
-  el.srcObject = stream;
+  const el = document.createElement(event.track.kind);
+  el.id = event.track.id;
+  el.srcObject = event.streams[0] || new MediaStream([event.track]);
   el.autoplay = true;
-  document.getElementById('peers').appendChild(el)
+  document.getElementById('peers').appendChild(el);
 };
 
 // setup local audio stream from microphone
@@ -64,7 +66,7 @@ async function subscribe(pc) {
     await pc.setRemoteDescription(jsep);
     var sdp = await pc.createAnswer();
     await pc.setLocalDescription(sdp);
-    // RPC anwser the subscribe offer
+    // RPC answer the subscribe offer
     await rpc('answer', [roomId, userId, trackId, JSON.stringify(sdp)]);
   }
   setTimeout(function () {
@@ -96,7 +98,7 @@ cd kraken && go build
 cp config/engine.example.toml config/engine.toml
 ip address # get your network interface name, edit config/engine.toml
 
-./kraken -c config/engine.toml -s engine
+./kraken -c config/engine.toml
 ```
 
 Get the source code of either [kraken.fm](https://github.com/MixinNetwork/kraken.fm) or [Mornin](https://github.com/fox-one/mornin.fm), follow their guides to use your local kraken API.
